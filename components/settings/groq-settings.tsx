@@ -94,8 +94,10 @@ export function GroqSettingsPanel() {
   const loadStatus = async () => {
     try {
       const data = await getGroqStatus()
+      console.log('Loaded Groq status:', data);
       setStatus(data.data)
     } catch (error) {
+      console.error('Status loading error:', error);
       toast.error('Groq durumu kontrol edilemedi', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
@@ -121,10 +123,12 @@ export function GroqSettingsPanel() {
     setTesting(true)
     try {
       const testResult = await testGroqSettings("Test sorusu: Merhaba, nasılsın?")
+      console.log('Test result:', testResult);
       toast.success(`Test başarılı! Yanıt süresi: ${testResult.data.performance_metrics.response_time_ms}ms`, {
         description: `Model: ${testResult.data.performance_metrics.model_used}, Token: ${testResult.data.performance_metrics.tokens_used}`
       })
     } catch (error) {
+      console.error('Test error:', error);
       toast.error('Test sırasında hata oluştu', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
@@ -362,7 +366,7 @@ export function GroqSettingsPanel() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                AI'nın yaratıcılık seviyesini belirler. Muhafazakar daha güvenli, yaratıcı daha özgün yanıtlar verir.
+                AInın yaratıcılık seviyesini belirler. Muhafazakar daha güvenli, yaratıcı daha özgün yanıtlar verir.
               </p>
             </div>
 
@@ -391,7 +395,7 @@ export function GroqSettingsPanel() {
 
           {/* Preset Buttons */}
           <div className="space-y-2">
-            <Label>Hızlı Preset'ler</Label>
+            <Label>Hızlı Presetler</Label>
             <div className="flex flex-wrap gap-2">
               {Object.entries(presets || {}).map(([key, preset]) => (
                 <Button

@@ -115,16 +115,23 @@ export async function getGroqModels(): Promise<GroqModelsResponse['data']> {
     }
 
     const result = await response.json();
+    console.log('Groq models API response:', result);
     
-    // API'den gelen yapıya göre modelleri dönüştür
-    if (result.available_models && Array.isArray(result.available_models)) {
+    // Backend'den gelen model listesini işle
+    if (result.success && result.data) {
       return {
-        models: result.available_models.map((model: string) => ({
-          model_name: model,
-          description: `${model} AI model`
+        models: Object.entries(result.data).map(([modelName, description]: [string, any]) => ({
+          id: modelName,
+          model_name: modelName,
+          name: modelName,
+          description: typeof description === 'string' ? description : `${modelName} AI model`,
+          context_length: 8192,
+          performance_tier: 'standard',
+          best_use_cases: ['general'],
+          is_available: true
         })),
-        current_default: result.current_model || result.current_settings?.default_model || '',
-        total_count: result.available_models.length
+        current_default: '',
+        total_count: Object.keys(result.data).length
       };
     }
     
@@ -135,6 +142,7 @@ export async function getGroqModels(): Promise<GroqModelsResponse['data']> {
       total_count: 0
     };
   } catch (error) {
+    console.error('Groq models fetch error:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
     }
@@ -232,9 +240,16 @@ export async function getGroqStatus(): Promise<GroqStatusResponse> {
       throw new Error(`Groq durumu alınırken hata oluştu: ${response.status}`);
     }
 
-    const result: GroqStatusResponse = await response.json();
-    return result;
+    const result = await response.json();
+    console.log('Groq status API response:', result);
+    
+    // Backend response'u GroqStatusResponse formatına dönüştür
+    return {
+      success: result.success || true,
+      data: result.data || result
+    };
   } catch (error) {
+    console.error('Groq status fetch error:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
     }
@@ -266,9 +281,16 @@ export async function testGroqSettings(testQuery: string): Promise<GroqTestRespo
       throw new Error(error.message || 'Groq ayarları test edilirken hata oluştu');
     }
 
-    const result: GroqTestResponse = await response.json();
-    return result;
+    const result = await response.json();
+    console.log('Groq test API response:', result);
+    
+    // Backend response'u GroqTestResponse formatına dönüştür
+    return {
+      success: result.success || true,
+      data: result.data || result
+    };
   } catch (error) {
+    console.error('Groq test fetch error:', error);
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
     }
