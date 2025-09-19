@@ -47,20 +47,20 @@ export async function getSystemStatus(): Promise<RedisSystemStatus> {
       redis: {
         status: result.data.redis.connection === 'healthy' ? 'healthy' : 'error',
         ping_time_ms: 0, // API doesn't provide this
-        memory_usage_mb: parseFloat(result.data.redis.info.used_memory.replace('M', '')),
-        connected_clients: result.data.redis.info.connected_clients,
-        uptime_seconds: result.data.redis.info.uptime,
+        memory_usage_mb: result.data.redis.info?.used_memory ? parseFloat(result.data.redis.info.used_memory.replace('M', '')) : 0,
+        connected_clients: result.data.redis.info?.connected_clients || 0,
+        uptime_seconds: result.data.redis.info?.uptime || 0,
         version: 'Unknown', // API doesn't provide this
-        total_keys: result.data.redis.info.total_keys,
-        active_task_progress: result.data.redis.active_task_progress,
-        user_histories: result.data.redis.user_histories
+        total_keys: result.data.redis.info?.total_keys || 0,
+        active_task_progress: result.data.redis?.active_task_progress || 0,
+        user_histories: result.data.redis?.user_histories || 0
       },
       celery: {
-        status: result.data.celery.connection === 'healthy' ? 'healthy' : 'error',
-        active_workers: result.data.celery.worker_count,
-        pending_tasks: result.data.celery.scheduled_tasks,
-        active_tasks: result.data.celery.active_tasks,
-        worker_names: result.data.celery.active_workers || []
+        status: result.data.celery?.connection === 'healthy' ? 'healthy' : 'error',
+        active_workers: result.data.celery?.worker_count || 0,
+        pending_tasks: result.data.celery?.scheduled_tasks || 0,
+        active_tasks: result.data.celery?.active_tasks || 0,
+        worker_names: result.data.celery?.active_workers || []
       }
     };
     

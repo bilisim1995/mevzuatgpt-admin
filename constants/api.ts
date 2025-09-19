@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  BASE_URL: "https://app.mevzuatgpt.org",
+  BASE_URL: "https://d918281c-1bd6-402c-9393-c4aff6ab45cd-00-24vj3sc6uk3ba.worf.replit.dev",
   ENDPOINTS: {
     LOGIN: "/api/auth/login",
     UPLOAD_DOCUMENT: "/api/admin/upload-document",
@@ -26,7 +26,12 @@ export const API_CONFIG = {
     ANNOUNCEMENTS: "/api/admin/announcements",
     PROGRESS_TRACK: "/api/user/progress",
     PROGRESS_DETAIL: "/api/user/progress",
-    GROQ_STATUS: "/api/admin/groq/status"
+    GROQ_STATUS: "/api/admin/groq/status",
+    GROQ_SETTINGS: "/api/admin/groq/settings",
+    GROQ_MODELS: "/api/admin/groq/models",
+    GROQ_CREATIVITY_PRESETS: "/api/admin/groq/creativity-presets",
+    GROQ_TEST_SETTINGS: "/api/admin/groq/test-settings",
+    GROQ_RESET_SETTINGS: "/api/admin/groq/reset-settings"
   }
 } as const;
 

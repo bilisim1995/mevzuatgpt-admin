@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Settings, TestTube, RotateCcw, Activity } from "lucide-react"
+import { Loader2, Settings, RotateCcw, Activity, RefreshCw, Check } from "lucide-react"
 import { toast } from "sonner"
 import {
   GroqSettings,
@@ -22,7 +22,6 @@ import {
   getGroqModels,
   getGroqCreativityPresets,
   getGroqStatus,
-  testGroqSettings,
   resetGroqSettings,
   applyGroqPreset
 } from '@/lib/groq'
@@ -44,17 +43,20 @@ export function GroqSettingsPanel() {
   const [status, setStatus] = useState<GroqStatus | null>(null)
   const [currentDefault, setCurrentDefault] = useState<string>('')
   const [loading, setLoading] = useState(false)
-  const [testing, setTesting] = useState(false)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [statusLoading, setStatusLoading] = useState(false)
 
   useEffect(() => {
-    loadSettings()
-    loadModels()
-    loadPresets()
-    // Load status when component mounts and every 30 seconds
-    loadStatus()
-    const statusInterval = setInterval(loadStatus, 30000)
+    const initializeData = async () => {
+      // Sadece diğer verileri yükle, status'u yükleme
+      await Promise.all([
+        loadSettings(),
+        loadModels(),
+        loadPresets()
+      ])
+    }
     
-    return () => clearInterval(statusInterval)
+    initializeData()
   }, [])
 
   const loadSettings = async () => {
@@ -71,9 +73,13 @@ export function GroqSettingsPanel() {
   const loadModels = async () => {
     try {
       const data = await getGroqModels()
+      console.log('Loaded Groq models:', data);
+      console.log('Models array:', data.models);
+      console.log('Models length:', data.models?.length);
       setModels(data.models || [])
       setCurrentDefault(data.current_default || '')
     } catch (error) {
+      console.error('Models loading error:', error);
       toast.error('Groq modelleri yüklenemedi', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
@@ -92,25 +98,77 @@ export function GroqSettingsPanel() {
   }
 
   const loadStatus = async () => {
+    setStatusLoading(true)
     try {
       const data = await getGroqStatus()
       console.log('Loaded Groq status:', data);
+      console.log('Available models:', data.data?.available_models);
+      console.log('Models length:', data.data?.available_models?.length);
       setStatus(data.data)
+      
+      // Status'tan gelen available_models'i settings'e de ekle (sadece eğer yeni modeller varsa)
+      if (data.data?.available_models && data.data.available_models.length > 0) {
+        setSettings(prev => ({
+          ...prev,
+          available_models: data.data.available_models
+        }))
+      }
+      // Eğer available_models boş gelirse, mevcut listeyi koru (temizleme)
+      
+      // Status'tan gelen current_model'i settings'e de ekle (sadece ilk yüklemede)
+      if (data.data?.current_model && isInitialLoad) {
+        setSettings(prev => ({
+          ...prev,
+          default_model: data.data.current_model
+        }))
+        setIsInitialLoad(false)
+      }
     } catch (error) {
       console.error('Status loading error:', error);
       toast.error('Groq durumu kontrol edilemedi', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
+    } finally {
+      setStatusLoading(false)
     }
   }
 
   const saveSettings = async () => {
     setLoading(true)
     try {
+      console.log('Saving Groq settings:', settings);
       const updatedSettings = await updateGroqSettings(settings)
-      toast.success('Groq ayarları güncellendi')
-      setSettings(updatedSettings)
+      console.log('Groq settings updated successfully:', updatedSettings);
+      // Toast mesajı için güvenli değerler
+      const displayModel = updatedSettings.default_model || settings.default_model || 'Bilinmiyor'
+      const displayTemperature = updatedSettings.temperature ?? settings.temperature ?? 'Bilinmiyor'
+      
+      toast.success('Groq ayarları başarıyla güncellendi', {
+        description: `Model: ${displayModel}, Sıcaklık: ${displayTemperature}`
+      })
+      // Sadece gerekli alanları güncelle, tüm settings'i değiştirme
+      setSettings(prev => {
+        console.log('Previous settings:', prev);
+        console.log('Updated settings from API:', updatedSettings);
+        
+        const newSettings = {
+          ...prev,
+          // API'den gelen güncellenmiş değerleri kullan (sadece tanımlı olanları)
+          ...(updatedSettings.default_model && { default_model: updatedSettings.default_model }),
+          ...(typeof updatedSettings.temperature === 'number' && { temperature: updatedSettings.temperature }),
+          ...(typeof updatedSettings.max_tokens === 'number' && { max_tokens: updatedSettings.max_tokens }),
+          ...(typeof updatedSettings.top_p === 'number' && { top_p: updatedSettings.top_p }),
+          ...(typeof updatedSettings.frequency_penalty === 'number' && { frequency_penalty: updatedSettings.frequency_penalty }),
+          ...(typeof updatedSettings.presence_penalty === 'number' && { presence_penalty: updatedSettings.presence_penalty }),
+          ...(updatedSettings.creativity_mode && { creativity_mode: updatedSettings.creativity_mode }),
+          ...(updatedSettings.response_style && { response_style: updatedSettings.response_style })
+        };
+        
+        console.log('Final settings after update:', newSettings);
+        return newSettings;
+      })
     } catch (error) {
+      console.error('Groq settings save error:', error);
       toast.error('Ayarlar kaydedilirken hata oluştu', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
@@ -119,23 +177,6 @@ export function GroqSettingsPanel() {
     }
   }
 
-  const testSettings = async () => {
-    setTesting(true)
-    try {
-      const testResult = await testGroqSettings("Test sorusu: Merhaba, nasılsın?")
-      console.log('Test result:', testResult);
-      toast.success(`Test başarılı! Yanıt süresi: ${testResult.data.performance_metrics.response_time_ms}ms`, {
-        description: `Model: ${testResult.data.performance_metrics.model_used}, Token: ${testResult.data.performance_metrics.tokens_used}`
-      })
-    } catch (error) {
-      console.error('Test error:', error);
-      toast.error('Test sırasında hata oluştu', {
-        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
 
   const resetSettings = async () => {
     setLoading(true)
@@ -181,9 +222,25 @@ export function GroqSettingsPanel() {
       {/* Status Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            Groq Servis Durumu
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Groq Servis Durumu
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadStatus}
+              disabled={statusLoading}
+              className="flex items-center gap-2"
+            >
+              {statusLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              {statusLoading ? 'Yükleniyor...' : 'Yenile'}
+            </Button>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -196,16 +253,16 @@ export function GroqSettingsPanel() {
                  (status.service_status as string).toUpperCase()}
               </Badge>
               <span className="text-sm text-gray-600">
-                Yanıt Süresi: {status.response_time_ms}ms
+                Yanıt Süresi: {status.response_time_ms || 0}ms
               </span>
               <span className="text-sm text-gray-600">
-                Aktif Model: {status?.current_settings?.default_model || 'Bilinmiyor'}
+                Aktif Model: {status?.current_model || status?.current_settings?.default_model || settings.default_model || 'Bilinmiyor'}
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Durum kontrol ediliyor...</span>
+              <Activity className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-500">Durum bilgisi yüklenmedi. Yenile butonuna tıklayarak kontrol edin.</span>
             </div>
           )}
         </CardContent>
@@ -238,28 +295,82 @@ export function GroqSettingsPanel() {
                   <SelectValue placeholder="Model seçiniz" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Available models from API */}
-                  {status?.available_models?.map((modelName) => (
-                    <SelectItem key={modelName} value={modelName}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{modelName}</span>
-                        <span className="text-xs text-gray-500">
-                          {status?.current_model === modelName ? 'Mevcut aktif model' : 'Groq AI Model'}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                  {/* Fallback models if available_models is empty */}
-                  {(!status?.available_models || status.available_models.length === 0) && models.map((model) => (
-                    <SelectItem key={model.model_name} value={model.model_name}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{model.model_name}</span>
-                        {model.description && (
-                          <span className="text-xs text-gray-500">{model.description}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {(() => {
+                    // Tüm modelleri birleştir
+                    const allModels = new Set<string>()
+                    
+                    // Status'tan gelen modeller
+                    if (status?.available_models && status.available_models.length > 0) {
+                      status.available_models.forEach(model => allModels.add(model))
+                    }
+                    
+                    // Settings'ten gelen modeller
+                    if (settings.available_models && settings.available_models.length > 0) {
+                      settings.available_models.forEach(model => allModels.add(model))
+                    }
+                    
+                    // Models API'sinden gelen modeller
+                    if (models && models.length > 0) {
+                      models.forEach(model => allModels.add(model.model_name))
+                    }
+                    
+                    // Statik modeller kaldırıldı - sadece API'den gelen modeller kullanılıyor
+                    
+                    // Varsayılan modeli de ekle
+                    if (settings.default_model) {
+                      allModels.add(settings.default_model)
+                    }
+                    
+                    const currentModel = status?.current_model || settings.default_model
+                    
+                    const modelList = Array.from(allModels)
+                    
+                    if (modelList.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-gray-500">
+                          <div className="flex flex-col items-center gap-2">
+                            <span className="text-lg">🤖</span>
+                            <span>Model listesi yükleniyor...</span>
+                            <span className="text-xs">API'den model bilgileri alınıyor</span>
+                          </div>
+                        </div>
+                      )
+                    }
+                    
+                    return modelList.map((modelName) => {
+                      // API'den gelen model bilgisini bul
+                      const apiModel = models.find(m => m.model_name === modelName)
+                      
+                      return (
+                        <SelectItem key={modelName} value={modelName}>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">🤖</span>
+                                <span className="font-medium">{modelName}</span>
+                                {apiModel?.performance_tier && (
+                                  <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                                    {apiModel.performance_tier}
+                                  </span>
+                                )}
+                              </div>
+                              {apiModel?.description && (
+                                <span className="text-xs text-gray-500">
+                                  {apiModel.description}
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-400">
+                                {currentModel === modelName ? 'Mevcut aktif model' : 'Groq AI Model'}
+                              </span>
+                            </div>
+                            {currentModel === modelName && (
+                              <Check className="w-4 h-4 text-green-600 ml-2" />
+                            )}
+                          </div>
+                        </SelectItem>
+                      )
+                    })
+                  })()}
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500 dark:text-gray-400">

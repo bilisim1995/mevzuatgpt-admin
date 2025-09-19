@@ -26,7 +26,7 @@ function getAuthHeaders() {
 export async function getGroqSettings(): Promise<GroqSettings> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/settings`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_SETTINGS}`,
       {
         method: 'GET',
         headers: getAuthHeaders(),
@@ -59,7 +59,7 @@ export async function getGroqSettings(): Promise<GroqSettings> {
 export async function updateGroqSettings(settings: Partial<GroqSettings>): Promise<GroqSettings> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/settings`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_SETTINGS}`,
       {
         method: 'PUT',
         headers: getAuthHeaders(),
@@ -82,7 +82,30 @@ export async function updateGroqSettings(settings: Partial<GroqSettings>): Promi
     }
 
     const result = await response.json();
-    return result.current_settings || result;
+    console.log('Groq settings update response:', result);
+    console.log('Response structure:', {
+      success: result.success,
+      hasData: !!result.data,
+      hasUpdatedSettings: !!(result.data && result.data.updated_settings),
+      hasCurrentSettings: !!result.current_settings,
+      fullResult: result
+    });
+    
+    // API response formatına göre düzelt
+    if (result.success && result.data && result.data.updated_settings) {
+      console.log('Using updated_settings from API');
+      return result.data.updated_settings;
+    }
+    
+    // Fallback - eğer updated_settings yoksa current_settings kullan
+    if (result.current_settings) {
+      console.log('Using current_settings from API');
+      return result.current_settings;
+    }
+    
+    // Son fallback - tüm result'u döndür
+    console.log('Using full result as fallback');
+    return result;
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
@@ -94,7 +117,7 @@ export async function updateGroqSettings(settings: Partial<GroqSettings>): Promi
 export async function getGroqModels(): Promise<GroqModelsResponse['data']> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/models`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_MODELS}`,
       {
         method: 'GET',
         headers: getAuthHeaders(),
@@ -153,7 +176,7 @@ export async function getGroqModels(): Promise<GroqModelsResponse['data']> {
 export async function getGroqCreativityPresets(): Promise<GroqCreativityPresetsResponse['data']> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/creativity-presets`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_CREATIVITY_PRESETS}`,
       {
         method: 'GET',
         headers: getAuthHeaders(),
@@ -260,7 +283,7 @@ export async function getGroqStatus(): Promise<GroqStatusResponse> {
 export async function testGroqSettings(testQuery: string): Promise<GroqTestResponse> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/test-settings?test_query=${encodeURIComponent(testQuery)}`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_TEST_SETTINGS}?test_query=${encodeURIComponent(testQuery)}&use_current_settings=true`,
       {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -277,8 +300,17 @@ export async function testGroqSettings(testQuery: string): Promise<GroqTestRespo
         }
         throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
       }
-      const error = await response.json().catch(() => ({ message: 'Groq ayarları test edilirken hata oluştu' }));
-      throw new Error(error.message || 'Groq ayarları test edilirken hata oluştu');
+      
+      let errorMessage = 'Groq ayarları test edilirken hata oluştu';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorData.error || errorMessage;
+        console.error('Test endpoint error details:', errorData);
+      } catch (parseError) {
+        console.error('Failed to parse error response:', parseError);
+      }
+      
+      throw new Error(`${errorMessage} (Status: ${response.status})`);
     }
 
     const result = await response.json();
@@ -301,7 +333,7 @@ export async function testGroqSettings(testQuery: string): Promise<GroqTestRespo
 export async function resetGroqSettings(): Promise<GroqSettings> {
   try {
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}/api/admin/groq/reset-settings`,
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.GROQ_RESET_SETTINGS}`,
       {
         method: 'POST',
         headers: getAuthHeaders(),
