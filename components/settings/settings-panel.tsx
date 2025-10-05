@@ -1,6 +1,6 @@
 "use client"
 
-import { Settings, Database } from "lucide-react"
+import { Settings, Database, CreditCard } from "lucide-react"
 import { Bot } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RedisManagement } from "./redis-management"
@@ -25,7 +25,7 @@ export function SettingsPanel() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="redis" className="w-full">
-          <TabsList className="grid w-full grid-cols-1 md:grid-cols-4 mb-8 bg-white/10 dark:bg-black/20 backdrop-blur-xl border border-gray-200/20 dark:border-gray-800/30 rounded-2xl p-1">
+          <TabsList className="grid w-full grid-cols-1 md:grid-cols-5 mb-8 bg-white/10 dark:bg-black/20 backdrop-blur-xl border border-gray-200/20 dark:border-gray-800/30 rounded-2xl p-1">
             <TabsTrigger 
               value="redis" 
               className="rounded-xl data-[state=active]:bg-white/20 dark:data-[state=active]:bg-black/30 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white transition-all duration-200"
@@ -54,6 +54,13 @@ export function SettingsPanel() {
               <Bot className="w-4 h-4 mr-2" />
               Groq Ayarları
             </TabsTrigger>
+            <TabsTrigger 
+              value="payment-settings" 
+              className="rounded-xl data-[state=active]:bg-white/20 dark:data-[state=active]:bg-black/30 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white transition-all duration-200"
+            >
+              <CreditCard className="w-4 h-4 mr-2" />
+              Ödeme Ayarları
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="redis">
@@ -70,6 +77,13 @@ export function SettingsPanel() {
           
           <TabsContent value="groq-settings">
             <GroqSettingsPanel />
+          </TabsContent>
+
+          <TabsContent value="payment-settings">
+            {/* Lazy import avoided for simplicity */}
+            {/**/}
+            {/* @ts-expect-error - file is client component */}
+            {require('./payment-settings').PaymentSettingsPanel()}
           </TabsContent>
         </Tabs>
       </div>

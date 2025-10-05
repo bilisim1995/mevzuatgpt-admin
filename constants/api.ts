@@ -27,6 +27,7 @@ export const API_CONFIG = {
     PROGRESS_TRACK: "/api/user/progress",
     PROGRESS_DETAIL: "/api/user/progress",
     GROQ_STATUS: "/api/admin/groq/status",
+    PAYMENT_SETTINGS: "/api/admin/payment-settings",
     GROQ_SETTINGS: "/api/admin/groq/settings",
     GROQ_MODELS: "/api/admin/groq/models",
     GROQ_CREATIVITY_PRESETS: "/api/admin/groq/creativity-presets",
