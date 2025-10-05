@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, LogIn, Mail, Lock, Loader2 } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, Loader2, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { loginUser } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { MESSAGES } from "@/constants/messages"
+import { Turnstile } from "@marsidev/react-turnstile"
 
 interface LoginFormProps {
   className?: string
@@ -20,18 +21,49 @@ export function LoginForm({ className }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileError, setTurnstileError] = useState("")
+  const turnstileRef = useRef<any>(null)
   const router = useRouter()
+
+  const handleTurnstileSuccess = (token: string) => {
+    setTurnstileToken(token)
+    setTurnstileError("")
+  }
+
+  const handleTurnstileError = () => {
+    setTurnstileToken(null)
+    setTurnstileError("Güvenlik doğrulaması başarısız. Lütfen tekrar deneyin.")
+  }
+
+  const handleTurnstileExpired = () => {
+    setTurnstileToken(null)
+    setTurnstileError("Güvenlik doğrulaması süresi doldu. Lütfen tekrar deneyin.")
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
+    setTurnstileError("")
+
+    // Turnstile token kontrolü
+    if (!turnstileToken) {
+      setTurnstileError("Lütfen güvenlik doğrulamasını tamamlayın.")
+      setIsLoading(false)
+      return
+    }
 
     try {
-      await loginUser({ email, password })
+      await loginUser({ email, password, turnstileToken })
       router.push("/admin/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : MESSAGES.AUTH.LOGIN_FAILED)
+      // Hata durumunda Turnstile'ı resetle
+      if (turnstileRef.current) {
+        turnstileRef.current.reset()
+      }
+      setTurnstileToken(null)
     } finally {
       setIsLoading(false)
     }
@@ -44,9 +76,6 @@ export function LoginForm({ className }: LoginFormProps) {
         {/* Neumorphism Inner Container */}
         <div className="bg-gradient-to-br from-white/5 to-gray-50/10 dark:from-black/5 dark:to-gray-900/10 rounded-2xl p-6 shadow-inner">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-100/20 to-gray-300/20 dark:from-gray-700/20 dark:to-gray-900/20 backdrop-blur-sm border border-gray-200/20 dark:border-gray-700/20 mb-4">
-              <LogIn className="w-8 h-8 text-gray-800 dark:text-gray-200" />
-            </div>
             <h1 className="text-3xl font-bold bg-gradient-to-br from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-2">
               {MESSAGES.AUTH.LOGIN_TITLE}
             </h1>
@@ -114,6 +143,32 @@ export function LoginForm({ className }: LoginFormProps) {
               </div>
             </div>
 
+            {/* Cloudflare Turnstile */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Güvenlik Doğrulaması
+              </Label>
+              <div className="flex justify-center">
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey="0x4AAAAAAB3TQTCwwiPkpkO7"
+                  onSuccess={handleTurnstileSuccess}
+                  onError={handleTurnstileError}
+                  onExpire={handleTurnstileExpired}
+                  options={{
+                    theme: 'light',
+                    size: 'normal'
+                  }}
+                />
+              </div>
+              {turnstileError && (
+                <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                  {turnstileError}
+                </p>
+              )}
+            </div>
+
             {error && (
               <div className="p-4 rounded-xl bg-red-50/50 dark:bg-red-900/20 border border-red-200/50 dark:border-red-800/30 backdrop-blur-sm">
                 <div className="flex items-center justify-center mb-2">
@@ -132,7 +187,7 @@ export function LoginForm({ className }: LoginFormProps) {
 
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !turnstileToken}
               className="w-full h-12 bg-gradient-to-r from-gray-800 to-black hover:from-gray-900 hover:to-gray-800 dark:from-white dark:to-gray-200 dark:hover:from-gray-100 dark:hover:to-gray-300 text-white dark:text-black rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {isLoading ? (
@@ -142,18 +197,12 @@ export function LoginForm({ className }: LoginFormProps) {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <LogIn className="w-4 h-4" />
                   {MESSAGES.AUTH.LOGIN_BUTTON}
                 </div>
               )}
             </Button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-200/20 dark:border-gray-700/20">
-            <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-              <p>{MESSAGES.AUTH.SECURE_ACCESS}</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

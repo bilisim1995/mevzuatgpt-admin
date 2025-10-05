@@ -24,12 +24,6 @@ export default function LoginPage() {
         <LoginForm />
       </div>
 
-      {/* Decorative Elements */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-center">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {MESSAGES.COMMON.COPYRIGHT}
-        </p>
-      </div>
     </div>
   )
 }

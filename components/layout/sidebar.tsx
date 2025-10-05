@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Home, Database, Users, ChevronRight, Bot, MessageSquare, CreditCard, Search, Settings, Activity, Megaphone } from "lucide-react"
+import { Home, Database, Users, ChevronRight, Bot, MessageSquare, CreditCard, Search, Settings, Activity, Megaphone, Receipt } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MESSAGES } from "@/constants/messages"
 
@@ -63,6 +63,12 @@ export function Sidebar({ activeItem, onItemClick }: SidebarProps) {
       id: 'credit',
       label: 'Kredi Hareketleri',
       icon: CreditCard,
+      hasChildren: false
+    },
+    {
+      id: 'billing',
+      label: 'Faturalandırma',
+      icon: Receipt,
       hasChildren: false
     },
     {

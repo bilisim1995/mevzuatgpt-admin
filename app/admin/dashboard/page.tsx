@@ -23,6 +23,7 @@ import { SystemHealthPanel } from "@/components/system-health/system-health-pane
 import { DashboardStatsComponent } from "@/components/dashboard/dashboard-stats"
 import { AnnouncementList } from "@/components/announcements/announcement-list"
 import { SettingsPanel } from "@/components/settings/settings-panel"
+import { PurchaseList } from "@/components/purchases/purchase-list"
 import { MESSAGES } from "@/constants/messages"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
@@ -122,6 +123,8 @@ export default function DashboardPage() {
         return <SystemHealthPanel />
       case 'settings':
         return <SettingsPanel />
+      case 'billing':
+        return <PurchaseList />
       default:
         return null
     }
@@ -153,8 +156,10 @@ export default function DashboardPage() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-6">
-          {renderContent()}
+        <main className="flex-1 p-6 w-full max-w-full overflow-x-hidden">
+          <div className="w-full max-w-full overflow-x-hidden">
+            {renderContent()}
+          </div>
         </main>
       </div>
     </div>

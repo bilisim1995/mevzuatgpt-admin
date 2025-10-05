@@ -2,7 +2,7 @@ import { LoginCredentials, LoginResponse, User } from '@/types/auth';
 import { API_CONFIG, STORAGE_KEYS } from '@/constants/api';
 import { MESSAGES } from '@/constants/messages';
 
-export async function loginUser(credentials: LoginCredentials): Promise<LoginResponse> {
+export async function loginUser(credentials: LoginCredentials & { turnstileToken?: string }): Promise<LoginResponse> {
   const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`, {
     method: 'POST',
     headers: {

@@ -31,7 +31,8 @@ export const API_CONFIG = {
     GROQ_MODELS: "/api/admin/groq/models",
     GROQ_CREATIVITY_PRESETS: "/api/admin/groq/creativity-presets",
     GROQ_TEST_SETTINGS: "/api/admin/groq/test-settings",
-    GROQ_RESET_SETTINGS: "/api/admin/groq/reset-settings"
+    GROQ_RESET_SETTINGS: "/api/admin/groq/reset-settings",
+    PURCHASES: "/api/admin/purchases"
   }
 } as const;
 

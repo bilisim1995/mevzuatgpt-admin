@@ -32,7 +32,6 @@ export const MESSAGES = {
 
   // Common Messages
   COMMON: {
-    COPYRIGHT: '© 2025 MevzuatGPT Yönetici Paneli',
     THEME_TOGGLE: 'Tema Değiştir',
     LOADING: 'Yükleniyor...',
     SUCCESS: 'Başarılı',
