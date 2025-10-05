@@ -7,6 +7,7 @@ import { RedisManagement } from "./redis-management"
 import { ElasticsearchManagement } from "./elasticsearch-management"
 import { PromptList } from "@/components/prompts/prompt-list"
 import { GroqSettingsPanel } from "./groq-settings"
+import { PaymentSettingsPanel } from "./payment-settings"
 
 export function SettingsPanel() {
   return (
@@ -80,10 +81,7 @@ export function SettingsPanel() {
           </TabsContent>
 
           <TabsContent value="payment-settings">
-            {/* Lazy import avoided for simplicity */}
-            {/**/}
-            {/* @ts-expect-error - file is client component */}
-            {require('./payment-settings').PaymentSettingsPanel()}
+            <PaymentSettingsPanel />
           </TabsContent>
         </Tabs>
       </div>
