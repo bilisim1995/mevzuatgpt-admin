@@ -9,12 +9,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
-import { getDocuments, deleteDocument, getDocumentDetails } from "@/lib/document"
+import { getDocuments, deleteDocument, getDocumentDetails, bulkDeleteDocuments, BulkDeleteFilters } from "@/lib/document"
 import { Document } from "@/types/document"
 import { MESSAGES } from "@/constants/messages"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { useActiveTasks, DocumentProgress } from "@/hooks/use-document-progress"
+import { useActiveBulkTasks } from "@/hooks/use-bulk-progress"
 
 export function DocumentList() {
   const [documents, setDocuments] = useState<Document[]>([])
@@ -33,8 +34,14 @@ export function DocumentList() {
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
   
+  // Bulk delete states
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  const [bulkDeleteFilters, setBulkDeleteFilters] = useState<BulkDeleteFilters>({})
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
+  
   // Use the existing hook for active tasks - otomatik 2 saniyede bir yenilenir
   const { activeTasks } = useActiveTasks()
+  const { activeTasks: activeBulkTasks } = useActiveBulkTasks()
 
   const fetchDocuments = useCallback(async (pageNum: number = 1, resetList: boolean = true) => {
     try {
@@ -155,14 +162,38 @@ export function DocumentList() {
     }
   }
 
+  const handleBulkDelete = async () => {
+    setBulkDeleteLoading(true)
+    try {
+      const result = await bulkDeleteDocuments(bulkDeleteFilters)
+      toast.success(result.message, {
+        description: `${result.data.summary.successful_deletions}/${result.data.summary.total_found} belge silindi. ${result.data.summary.total_embeddings_deleted} embedding silindi.`
+      })
+      setBulkDeleteModalOpen(false)
+      setBulkDeleteFilters({})
+      // Belge listesini yenile
+      await fetchDocuments(1, true)
+    } catch (error) {
+      toast.error('Toplu silme işlemi sırasında hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setBulkDeleteLoading(false)
+    }
+  }
+
   const getStatusBadgeWithProgress = (document: Document) => {
-    // İlk önce aktif task'lardan bu doküman için progress bilgisi ara
+    // İlk önce tekli PDF task'lardan bu doküman için progress bilgisi ara
     const taskProgress = activeTasks.find(task => 
       task.document_title === document.title || 
       task.document_title === document.filename ||
       document.title.includes(task.document_title) ||
       task.document_title.includes(document.title)
     )
+    
+    // Eğer tekli task yoksa, çoklu PDF task'larından kontrol et
+    // TODO: activeBulkTasks type'ı düzeltilecek
+    const bulkTaskProgress = null
     
     // Eğer aktif task varsa, onun durumunu kullan
     if (taskProgress) {
@@ -221,6 +252,12 @@ export function DocumentList() {
           </div>
         )
       }
+    }
+    
+    // Eğer çoklu PDF task varsa, onun durumunu kullan
+    // TODO: activeBulkTasks type'ı düzeltilecek
+    if (false) {
+      // Geçici olarak devre dışı
     }
     
     // Aktif task yoksa, document'ın kendi durumunu kullan
@@ -311,6 +348,8 @@ export function DocumentList() {
     doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     doc.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
     doc.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (doc.belge_adi && doc.belge_adi.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (doc.document_title && doc.document_title.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (doc.institution && doc.institution.toLowerCase().includes(searchTerm.toLowerCase()))
   ).filter(doc => 
     !categoryFilter || doc.category === categoryFilter
@@ -342,15 +381,26 @@ export function DocumentList() {
               <p className="text-gray-600 dark:text-gray-400">{MESSAGES.DOCUMENTS.MANAGEMENT_DESCRIPTION}</p>
             </div>
           </div>
-          {/* Aktif task sayısını göster */}
-          {activeTasks.length > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></div>
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                {activeTasks.length} aktif işlem
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {/* Aktif task sayısını göster */}
+            {activeTasks.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></div>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {activeTasks.length} aktif işlem
+                </span>
+              </div>
+            )}
+            {/* Toplu Silme Butonu */}
+            <Button
+              onClick={() => setBulkDeleteModalOpen(true)}
+              variant="outline"
+              className="bg-red-100/50 dark:bg-red-900/30 border-red-300/50 dark:border-red-700/50 text-red-800 dark:text-red-200 hover:bg-red-200/50 dark:hover:bg-red-800/30"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Toplu Sil
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -424,12 +474,15 @@ export function DocumentList() {
             <p className="text-gray-600 dark:text-gray-400">{MESSAGES.DOCUMENTS.NO_DOCUMENTS}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-64 overflow-y-auto border border-gray-200/10 dark:border-gray-700/10 rounded-xl">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200/10 dark:border-gray-700/10 rounded-xl">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200/20 dark:border-gray-700/20">
                   <th className="text-left py-4 px-4 text-sm font-medium text-gray-700 dark:text-gray-300">
                     {MESSAGES.DOCUMENTS.DOCUMENT_TITLE}
+                  </th>
+                  <th className="text-left py-4 px-4 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Belge Adı
                   </th>
                   <th className="text-left py-4 px-4 text-sm font-medium text-gray-700 dark:text-gray-300">
                     {MESSAGES.DOCUMENTS.CATEGORY}
@@ -465,6 +518,13 @@ export function DocumentList() {
                             {document.filename}
                           </p>
                         </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div>
+                        <p className="text-sm text-gray-900 dark:text-white">
+                          {document.belge_adi || 'Belirtilmemiş'}
+                        </p>
                       </div>
                     </td>
                     <td className="py-4 px-4">
@@ -827,6 +887,103 @@ export function DocumentList() {
               <p>Doküman detayları yüklenemedi</p>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Modal */}
+      <Dialog open={bulkDeleteModalOpen} onOpenChange={setBulkDeleteModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              Toplu Belge Silme
+            </DialogTitle>
+            <DialogDescription>
+              Belirtilen kriterlere göre belgeleri toplu olarak silin. En az bir filtre belirtmelisiniz.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Kurum
+              </label>
+              <Input
+                placeholder="Örn: TBB, UYAP, Adalet Bakanlığı"
+                value={bulkDeleteFilters.institution || ''}
+                onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, institution: e.target.value }))}
+                className="w-full"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Belge Adı (İçerir Araması)
+              </label>
+              <Input
+                placeholder="Örn: kanun, tüzük, yönetmelik"
+                value={bulkDeleteFilters.document_name || ''}
+                onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, document_name: e.target.value }))}
+                className="w-full"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Tarih (YYYY-MM-DD)
+              </label>
+              <Input
+                type="date"
+                value={bulkDeleteFilters.creation_date || ''}
+                onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, creation_date: e.target.value }))}
+                className="w-full"
+              />
+            </div>
+            
+            <div className="p-4 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200/50 dark:border-yellow-700/30">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="font-medium text-yellow-800 dark:text-yellow-200 mb-1">⚠️ Önemli Uyarı</h4>
+                  <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
+                    <li>• Bu işlem geri alınamaz!</li>
+                    <li>• Belgeler hem veritabanından hem Elasticsearch'ten silinir</li>
+                    <li>• Fiziksel PDF dosyaları da silinir</li>
+                    <li>• En az bir filtre belirtmelisiniz</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkDeleteModalOpen(false)
+                setBulkDeleteFilters({})
+              }}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteLoading || (!bulkDeleteFilters.institution && !bulkDeleteFilters.document_name && !bulkDeleteFilters.creation_date)}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleteLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Siliniyor...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Toplu Sil
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

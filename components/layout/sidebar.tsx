@@ -33,7 +33,11 @@ export function Sidebar({ activeItem, onItemClick }: SidebarProps) {
       label: MESSAGES.SIDEBAR.DATA_SOURCE_MANAGEMENT,
       icon: Database,
       hasChildren: true,
-      children: []
+      children: [
+        { id: 'single-upload', label: 'Tekli PDF Yükleme' },
+        { id: 'bulk-upload', label: 'Çoklu PDF Yükleme' },
+        { id: 'pdf-management', label: 'PDF Yönetimi' }
+      ]
     },
     {
       id: 'users',
@@ -131,6 +135,27 @@ export function Sidebar({ activeItem, onItemClick }: SidebarProps) {
                   />
                 )}
               </button>
+              
+              {/* Children menu items */}
+              {item.hasChildren && item.children && expandedItems.includes(item.id) && (
+                <div className="ml-4 mt-2 space-y-1">
+                  {item.children.map((child) => (
+                    <button
+                      key={child.id}
+                      onClick={() => onItemClick(child.id)}
+                      className={cn(
+                        "w-full flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm",
+                        "hover:bg-white/10 dark:hover:bg-black/20",
+                        activeItem === child.id && "bg-white/20 dark:bg-black/30"
+                      )}
+                    >
+                      <span className="text-gray-600 dark:text-gray-400">
+                        {child.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               
               {/* Separator line */}
               {item.id !== menuItems[menuItems.length - 1].id && (

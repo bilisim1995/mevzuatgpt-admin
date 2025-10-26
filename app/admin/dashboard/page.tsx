@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { ProfileDropdown } from "@/components/layout/profile-dropdown"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UploadForm } from "@/components/documents/upload-form"
+import { BulkUploadForm } from "@/components/documents/bulk-upload-form"
 import { DocumentList } from "@/components/documents/document-list"
 import { UserList } from "@/components/users/user-list"
 import { PromptList } from "@/components/prompts/prompt-list"
@@ -85,6 +86,12 @@ export default function DashboardPage() {
             </TabsContent>
           </Tabs>
         )
+      case 'single-upload':
+        return <UploadForm />
+      case 'bulk-upload':
+        return <BulkUploadForm />
+      case 'pdf-management':
+        return <DocumentList />
       case 'users':
         return <UserList />
       case 'announcements':

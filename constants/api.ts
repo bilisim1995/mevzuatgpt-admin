@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  BASE_URL: "https://app.mevzuatgpt.org",
+  BASE_URL: "https://d918281c-1bd6-402c-9393-c4aff6ab45cd-00-24vj3sc6uk3ba.worf.replit.dev",
   ENDPOINTS: {
     LOGIN: "/api/auth/login",
     UPLOAD_DOCUMENT: "/api/admin/upload-document",

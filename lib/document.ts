@@ -15,6 +15,9 @@ export async function uploadDocument(documentData: DocumentUpload): Promise<{ ta
   formData.append('description', documentData.description);
   formData.append('keywords', documentData.keywords);
   formData.append('source_institution', documentData.source_institution);
+  if (documentData.belge_adi) {
+    formData.append('belge_adi', documentData.belge_adi);
+  }
   formData.append('file', documentData.file);
 
   const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.UPLOAD_DOCUMENT}`, {
@@ -111,6 +114,8 @@ export async function getDocuments(
         description: doc.preview || '',
         keywords: doc.keywords || '',
         institution: doc.institution || doc.source_institution || '',
+        belge_adi: doc.belge_adi || '',
+        document_title: doc.document_title || '',
         has_error: doc.has_error || false,
         // Yeni alanlar
         updated_at: doc.updated_at,
@@ -198,4 +203,78 @@ export async function reprocessDocument(documentId: string): Promise<void> {
   if (!response.ok) {
     throw new Error('Doküman yeniden işlenirken hata oluştu');
   }
+}
+
+export interface BulkDeleteFilters {
+  institution?: string;
+  document_name?: string;
+  creation_date?: string;
+}
+
+export interface BulkDeleteResponse {
+  success: boolean;
+  message: string;
+  data: {
+    filters: BulkDeleteFilters;
+    summary: {
+      total_found: number;
+      successful_deletions: number;
+      failed_deletions: number;
+      total_embeddings_deleted: number;
+    };
+    deleted_documents: Array<{
+      document_id: string;
+      document_title: string;
+      institution: string;
+      status: string;
+      embeddings_deleted: number;
+      physical_file_deleted: boolean;
+      bunny_url: string;
+    }>;
+    deleted_by: string;
+    deletion_timestamp: string;
+  };
+}
+
+export async function bulkDeleteDocuments(filters: BulkDeleteFilters): Promise<BulkDeleteResponse> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null;
+
+  if (!token) {
+    throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+  }
+
+  // En az bir filtre gerekli
+  if (!filters.institution && !filters.document_name && !filters.creation_date) {
+    throw new Error('En az bir filtre belirtmelisiniz (institution, document_name, creation_date)');
+  }
+
+  // Query parametrelerini oluştur
+  const queryParams = new URLSearchParams();
+  if (filters.institution) queryParams.append('institution', filters.institution);
+  if (filters.document_name) queryParams.append('document_name', filters.document_name);
+  if (filters.creation_date) queryParams.append('creation_date', filters.creation_date);
+
+  const response = await fetch(`${API_CONFIG.BASE_URL}/api/admin/documents/bulk-delete?${queryParams.toString()}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        window.location.href = '/admin/login';
+      }
+      throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+    }
+    throw new Error(`Toplu belge silme işlemi sırasında hata oluştu: ${response.status}`);
+  }
+
+  const result = await response.json();
+  return result;
 }

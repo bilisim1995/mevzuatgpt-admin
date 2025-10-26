@@ -5,9 +5,8 @@ import { Database, RefreshCw, Trash2, AlertTriangle, CheckCircle, Clock, Users, 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { getSystemStatus, clearTasks, clearAllRedis, purgeCeleryQueue, clearActiveTasks, getRedisConnections, restartCeleryWorker } from "@/lib/redis"
-import { RedisSystemStatus } from "@/types/redis"
-import { RedisConnectionInfo } from "@/types/redis"
+import { getSystemStatus, clearTasks, clearAllRedis, purgeCeleryQueue, clearActiveTasks, getRedisConnections, restartCeleryWorker, getCeleryStatus, restartCeleryWorkerByPid, startCeleryWorker, restartCeleryWorkerNew, getRedisConnectionDetails, cleanupRedisConnections, RedisConnectionDetails, RedisCleanupResponse } from "@/lib/redis"
+import { RedisSystemStatus, RedisConnectionInfo, CeleryInfo } from "@/types/redis"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -23,9 +22,15 @@ export function RedisManagement() {
   const [operationLoading, setOperationLoading] = useState(false)
   const [connectionModalOpen, setConnectionModalOpen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<RedisConnectionInfo | null>(null)
+  const [celeryStatus, setCeleryStatus] = useState<CeleryInfo | null>(null)
+  const [connectionDetailsModalOpen, setConnectionDetailsModalOpen] = useState(false)
+  const [connectionDetails, setConnectionDetails] = useState<RedisConnectionDetails | null>(null)
+  const [cleanupModalOpen, setCleanupModalOpen] = useState(false)
 
   useEffect(() => {
     loadSystemStatus()
+    loadConnectionInfo()
+    loadCeleryStatus()
   }, [])
 
   const loadSystemStatus = async () => {
@@ -43,9 +48,33 @@ export function RedisManagement() {
     }
   }
 
+  const loadConnectionInfo = async () => {
+    try {
+      const data = await getRedisConnections()
+      setConnectionInfo(data)
+    } catch (error) {
+      console.error('Redis bağlantı bilgileri yüklenirken hata:', error)
+      // Hata durumunda toast gösterme, sadece console'a log
+    }
+  }
+
+  const loadCeleryStatus = async () => {
+    try {
+      const data = await getCeleryStatus()
+      setCeleryStatus(data)
+    } catch (error) {
+      console.error('Celery durumu yüklenirken hata:', error)
+      // Hata durumunda toast gösterme, sadece console'a log
+    }
+  }
+
   const handleRefresh = async () => {
     setRefreshing(true)
-    await loadSystemStatus()
+    await Promise.all([
+      loadSystemStatus(),
+      loadConnectionInfo(),
+      loadCeleryStatus()
+    ])
     setRefreshing(false)
     toast.success('Sistem durumu güncellendi')
   }
@@ -55,7 +84,7 @@ export function RedisManagement() {
     try {
       const result = await clearTasks()
       toast.success('Task\'lar başarıyla temizlendi', {
-        description: `${result.total_deleted} adet key silindi (Progress: ${result.progress_deleted}, Celery: ${result.celery_deleted}, Kombu: ${result.kombu_deleted})`
+        description: `${result.total_deleted} adet key silindi (Progress: ${result.progress_keys_deleted}, Celery: ${result.celery_keys_deleted}, Kombu: ${result.kombu_keys_deleted})`
       })
       setClearTasksModalOpen(false)
       await loadSystemStatus()
@@ -73,7 +102,7 @@ export function RedisManagement() {
     try {
       const result = await clearAllRedis()
       toast.success('Redis tamamen temizlendi', {
-        description: `${result.cleared_count} adet key silindi (Önceki: ${result.keys_before}, Sonraki: ${result.keys_after})`
+        description: `${result.keys_deleted} adet key silindi (Kalan: ${result.keys_remaining})`
       })
       setClearAllModalOpen(false)
       await loadSystemStatus()
@@ -91,7 +120,7 @@ export function RedisManagement() {
     try {
       const result = await purgeCeleryQueue()
       toast.success('Celery queue temizlendi', {
-        description: `${result.cleared_count} adet task silindi`
+        description: `${result.purged_tasks} adet task silindi`
       })
       setPurgeQueueModalOpen(false)
       await loadSystemStatus()
@@ -140,15 +169,104 @@ export function RedisManagement() {
     }
   }
 
+  const handleRestartWorkerByPid = async (pid: string, force: boolean = false) => {
+    setOperationLoading(true)
+    try {
+      const result = await restartCeleryWorkerByPid(pid, force)
+      toast.success(result.message, {
+        description: `PID: ${result.data.pid}, Yöntem: ${result.data.kill_method}`
+      })
+      // Celery durumunu yenile
+      await loadCeleryStatus()
+    } catch (error) {
+      toast.error('Worker restart edilirken hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setOperationLoading(false)
+    }
+  }
+
+  const handleStartCeleryWorker = async () => {
+    setOperationLoading(true)
+    try {
+      const result = await startCeleryWorker()
+      toast.success(result.message, {
+        description: `Yeni PID'ler: ${result.data.process_ids?.join(', ') || 'Yok'}`
+      })
+      // Celery durumunu yenile
+      await loadCeleryStatus()
+    } catch (error) {
+      toast.error('Worker başlatılırken hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setOperationLoading(false)
+    }
+  }
+
+  const handleRestartCeleryWorkerNew = async () => {
+    setOperationLoading(true)
+    try {
+      const result = await restartCeleryWorkerNew()
+      toast.success(result.message, {
+        description: `Eski PID'ler: ${result.data.old_pids?.join(', ') || 'Yok'}, Yeni PID'ler: ${result.data.new_pids?.join(', ') || 'Yok'}`
+      })
+      // Celery durumunu yenile
+      await loadCeleryStatus()
+    } catch (error) {
+      toast.error('Worker yeniden başlatılırken hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setOperationLoading(false)
+    }
+  }
+
   const handleShowConnectionDetails = async () => {
     try {
       setConnectionModalOpen(true)
-      const data = await getRedisConnections()
-      setConnectionInfo(data)
+      // Eğer connection info yoksa yeniden yükle
+      if (!connectionInfo) {
+        const data = await getRedisConnections()
+        setConnectionInfo(data)
+      }
     } catch (error) {
       toast.error('Redis bağlantı bilgileri alınırken hata oluştu', {
         description: error instanceof Error ? error.message : 'Bilinmeyen hata'
       })
+    }
+  }
+
+  const handleShowConnectionManagement = async () => {
+    try {
+      setConnectionDetailsModalOpen(true)
+      const data = await getRedisConnectionDetails()
+      setConnectionDetails(data)
+    } catch (error) {
+      toast.error('Redis connection detayları alınırken hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    }
+  }
+
+  const handleCleanupConnections = async () => {
+    setOperationLoading(true)
+    try {
+      const result = await cleanupRedisConnections(true)
+      toast.success(result.message, {
+        description: `${result.data.freed_connections} connection temizlendi (${result.data.connections_before} → ${result.data.connections_after})`
+      })
+      setCleanupModalOpen(false)
+      // Connection detaylarını yenile
+      const data = await getRedisConnectionDetails()
+      setConnectionDetails(data)
+    } catch (error) {
+      toast.error('Connection temizleme sırasında hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setOperationLoading(false)
     }
   }
 
@@ -168,6 +286,16 @@ export function RedisManagement() {
         label: 'Hata', 
         className: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400',
         icon: AlertTriangle
+      },
+      running: { 
+        label: 'Çalışıyor', 
+        className: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400',
+        icon: CheckCircle
+      },
+      stopped: { 
+        label: 'Durduruldu', 
+        className: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400',
+        icon: XCircle
       }
     }
     
@@ -255,6 +383,15 @@ export function RedisManagement() {
               <Database className="w-4 h-4 mr-2" />
               Detaylı Bilgi
             </Button>
+            <Button
+              onClick={handleShowConnectionManagement}
+              variant="outline"
+              size="sm"
+              className="bg-white/50 dark:bg-black/30 backdrop-blur-sm border-gray-300/30 dark:border-gray-700/30 rounded-xl"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Connection Yönetimi
+            </Button>
           </div>
         </div>
 
@@ -318,92 +455,157 @@ export function RedisManagement() {
             )}
           </div>
 
-          {/* Celery Status */}
-          <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Activity className="w-5 h-5 text-green-600 dark:text-green-400" />
-                Celery Durumu
-              </h4>
-              <div className="flex items-center gap-2">
-                {getStatusBadge(systemStatus.celery.status)}
-                <Button
-                  onClick={() => setRestartWorkerModalOpen(true)}
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 bg-white/50 dark:bg-black/30 backdrop-blur-sm border-gray-300/30 dark:border-gray-700/30 rounded-lg hover:bg-white/70 dark:hover:bg-black/50 transition-all duration-300"
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Restart
-                </Button>
+          {/* Celery Detailed Status */}
+          {celeryStatus && (
+            <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Server className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  Celery Detaylı Durum
+                </h4>
+                <div className="flex items-center gap-2">
+                  {getStatusBadge(celeryStatus.worker_status)}
+                  <Button
+                    onClick={handleStartCeleryWorker}
+                    disabled={operationLoading}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 bg-green-100/50 dark:bg-green-900/30 border-green-300/50 dark:border-green-700/50 text-green-800 dark:text-green-200 hover:bg-green-200/50 dark:hover:bg-green-800/30"
+                  >
+                    <Activity className="w-3 h-3 mr-1" />
+                    Start
+                  </Button>
+                  <Button
+                    onClick={handleRestartCeleryWorkerNew}
+                    disabled={operationLoading}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3 bg-blue-100/50 dark:bg-blue-900/30 border-blue-300/50 dark:border-blue-700/50 text-blue-800 dark:text-blue-200 hover:bg-blue-200/50 dark:hover:bg-blue-800/30"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Restart
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            {systemStatus.celery.status === 'healthy' || systemStatus.celery.status === 'warning' ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-xl">
-                  <p className="text-xs text-yellow-600 dark:text-yellow-400 break-words">Zamanlanmış</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {systemStatus.celery.pending_tasks || 0}
-                  </p>
-                </div>
-                <div className="p-3 bg-green-50/50 dark:bg-green-900/20 rounded-xl">
-                  <div className="flex items-center gap-1 mb-1">
-                    <Activity className="w-3 h-3 text-green-600 dark:text-green-400" />
-                    <p className="text-xs text-green-600 dark:text-green-400">Worker</p>
+              {celeryStatus.worker_status === 'running' ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-green-50/50 dark:bg-green-900/20 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      <p className="text-sm font-medium text-green-800 dark:text-green-200">Worker Durumu</p>
+                    </div>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">
+                      {celeryStatus.worker_status === 'running' ? 'Çalışıyor' : 'Durduruldu'}
+                    </p>
                   </div>
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">
-                    {systemStatus.celery.active_workers}
-                  </p>
-                </div>
-                <div className="p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl">
-                  <p className="text-xs text-blue-600 dark:text-blue-400 break-words">Aktif Task</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {systemStatus.celery.active_tasks || 0}
-                  </p>
-                </div>
-                <div className="p-3 bg-purple-50/50 dark:bg-purple-900/20 rounded-xl">
-                  <p className="text-xs text-purple-600 dark:text-purple-400 break-words">Worker Adları</p>
-                  <div className="text-xs font-medium text-gray-900 dark:text-white">
-                    {systemStatus.celery.worker_names && systemStatus.celery.worker_names.length > 0 ? (
-                      <div className="space-y-1">
-                        {systemStatus.celery.worker_names.map((worker, index) => (
-                          <div key={index} className="bg-purple-100/50 dark:bg-purple-800/30 px-2 py-1 rounded">
-                            {worker}
+                  
+                  <div className="p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Process Sayısı</p>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {celeryStatus.process_count}
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Redis Task'ları</p>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {celeryStatus.task_stats.total_tasks_in_redis}
+                    </p>
+                  </div>
+                  
+                  {celeryStatus.process_ids && celeryStatus.process_ids.length > 0 && (
+                    <div className="md:col-span-3 p-4 bg-purple-50/50 dark:bg-purple-900/20 rounded-xl">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <p className="text-sm font-medium text-purple-800 dark:text-purple-200">Process ID'leri</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {celeryStatus.process_ids.map((processId, index) => (
+                          <div key={index} className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-purple-200/50 dark:border-purple-700/30">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-800/30 dark:text-purple-200 px-2 py-1">
+                                  PID: {processId}
+                                </Badge>
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                  Worker #{index + 1}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                <span className="text-xs text-green-600 dark:text-green-400">Aktif</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                onClick={() => handleRestartWorkerByPid(processId, false)}
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 h-8 px-3 bg-green-100/50 dark:bg-green-900/30 border-green-300/50 dark:border-green-700/50 text-green-800 dark:text-green-200 hover:bg-green-200/50 dark:hover:bg-green-800/30"
+                              >
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                                Restart
+                              </Button>
+                              <Button
+                                onClick={() => handleRestartWorkerByPid(processId, true)}
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 h-8 px-3 bg-red-100/50 dark:bg-red-900/30 border-red-300/50 dark:border-red-700/50 text-red-800 dark:text-red-200 hover:bg-red-200/50 dark:hover:bg-red-800/30"
+                              >
+                                <XCircle className="w-3 h-3 mr-1" />
+                                Force Kill
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      'Worker yok'
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 bg-red-50/50 dark:bg-red-900/20 rounded-xl border border-red-200/50 dark:border-red-800/30">
-                <div className="flex items-start gap-3">
-                  <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <h5 className="font-medium text-red-800 dark:text-red-200 mb-2">Celery Bağlantı Hatası</h5>
-                <p className="text-sm text-red-700 dark:text-red-300">
-                  {systemStatus.celery.error || 'Celery worker hatası'}
-                </p>
-                    <div className="mt-3 p-2 bg-red-100/50 dark:bg-red-800/20 rounded-lg">
-                      <p className="text-xs text-red-600 dark:text-red-400">
-                        💡 <strong>Çözüm önerileri:</strong>
-                      </p>
-                      <ul className="text-xs text-red-600 dark:text-red-400 mt-1 space-y-1">
-                        <li>• Celery worker'ların çalıştığından emin olun</li>
-                        <li>• Redis bağlantısını kontrol edin</li>
-                        <li>• Worker'ları yeniden başlatmayı deneyin</li>
-                      </ul>
                     </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-red-50/50 dark:bg-red-900/20 rounded-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <p className="text-sm font-medium text-red-800 dark:text-red-200">Celery Durduruldu</p>
+                  </div>
+                  <p className="text-sm text-red-700 dark:text-red-300 mb-4">
+                    Celery worker'ları çalışmıyor. Process sayısı: {celeryStatus.process_count}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleStartCeleryWorker}
+                      disabled={operationLoading}
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3 bg-green-100/50 dark:bg-green-900/30 border-green-300/50 dark:border-green-700/50 text-green-800 dark:text-green-200 hover:bg-green-200/50 dark:hover:bg-green-800/30"
+                    >
+                      <Activity className="w-3 h-3 mr-1" />
+                      Worker Başlat
+                    </Button>
+                    <Button
+                      onClick={handleRestartCeleryWorkerNew}
+                      disabled={operationLoading}
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3 bg-blue-100/50 dark:bg-blue-900/30 border-blue-300/50 dark:border-blue-700/50 text-blue-800 dark:text-blue-200 hover:bg-blue-200/50 dark:hover:bg-blue-800/30"
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Yeniden Başlat
+                    </Button>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
+
 
         {/* Action Buttons */}
         <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
@@ -915,6 +1117,272 @@ export function RedisManagement() {
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-4 h-4" />
                   Worker'ları Yeniden Başlat
+                </div>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Redis Connection Management Modal */}
+      <Dialog open={connectionDetailsModalOpen} onOpenChange={setConnectionDetailsModalOpen}>
+        <DialogContent className="bg-white/90 dark:bg-black/90 backdrop-blur-xl border border-gray-200/30 dark:border-gray-700/30 max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              Redis Connection Yönetimi
+            </DialogTitle>
+          </DialogHeader>
+          {connectionDetails ? (
+            <div className="space-y-6">
+              {/* Summary */}
+              <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5" />
+                  Connection Özeti
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl text-center">
+                    <h5 className="font-medium text-blue-900 dark:text-blue-100 mb-2">Toplam Connection</h5>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                      {connectionDetails.summary.total_connections}
+                    </p>
+                  </div>
+                  <div className="p-4 bg-green-50/50 dark:bg-green-900/20 rounded-xl text-center">
+                    <h5 className="font-medium text-green-900 dark:text-green-100 mb-2">Maksimum İzin</h5>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                      256
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      (Yeni Plan)
+                    </p>
+                  </div>
+                  <div className="p-4 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-xl text-center">
+                    <h5 className="font-medium text-yellow-900 dark:text-yellow-100 mb-2">Kullanım Oranı</h5>
+                    <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
+                      %{((connectionDetails.summary.total_connections / 256) * 100).toFixed(1)}
+                    </p>
+                  </div>
+                  <div className="p-4 bg-purple-50/50 dark:bg-purple-900/20 rounded-xl text-center">
+                    <h5 className="font-medium text-purple-900 dark:text-purple-100 mb-2">Kullanılabilir</h5>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+                      {256 - connectionDetails.summary.total_connections}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <Server className="w-5 h-5 text-red-600 dark:text-red-400" />
+                    FastAPI Pool
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-red-50/50 dark:bg-red-900/20 rounded-xl">
+                      <span className="text-sm text-red-900 dark:text-red-100">Maksimum</span>
+                      <span className="font-bold text-red-700 dark:text-red-300">
+                        {connectionDetails.breakdown.fastapi_pool.max_connections}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl">
+                      <span className="text-sm text-blue-900 dark:text-blue-100">Oluşturulan</span>
+                      <span className="font-bold text-blue-700 dark:text-blue-300">
+                        {connectionDetails.breakdown.fastapi_pool.created_connections}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {connectionDetails.breakdown.fastapi_pool.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    Celery Workers
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-green-50/50 dark:bg-green-900/20 rounded-xl">
+                      <span className="text-sm text-green-900 dark:text-green-100">Worker Sayısı</span>
+                      <span className="font-bold text-green-700 dark:text-green-300">
+                        {connectionDetails.breakdown.celery_workers.worker_count}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl">
+                      <span className="text-sm text-blue-900 dark:text-blue-100">Worker Başına</span>
+                      <span className="font-bold text-blue-700 dark:text-blue-300">
+                        {connectionDetails.breakdown.celery_workers.estimated_connections_per_worker}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-purple-50/50 dark:bg-purple-900/20 rounded-xl">
+                      <span className="text-sm text-purple-900 dark:text-purple-100">Toplam Tahmin</span>
+                      <span className="font-bold text-purple-700 dark:text-purple-300">
+                        {connectionDetails.breakdown.celery_workers.total_estimated}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {connectionDetails.breakdown.celery_workers.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <Database className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                    Diğer
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-orange-50/50 dark:bg-orange-900/20 rounded-xl">
+                      <span className="text-sm text-orange-900 dark:text-orange-100">Tahmin Edilen</span>
+                      <span className="font-bold text-orange-700 dark:text-orange-300">
+                        {connectionDetails.breakdown.other.estimated}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {connectionDetails.breakdown.other.description}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recommendations */}
+              {(() => {
+                const filteredRecommendations = connectionDetails.recommendations
+                  ?.filter((recommendation) => {
+                    const text = typeof recommendation === 'string' 
+                      ? recommendation 
+                      : (recommendation && typeof recommendation === 'object' && 'message' in recommendation 
+                        ? recommendation.message 
+                        : JSON.stringify(recommendation));
+                    
+                    // Eski limit referanslarını filtrele
+                    return !text.includes('30') && 
+                           !text.includes('Redis Cloud Free Plan') &&
+                           !text.includes('limit dolmak üzere');
+                  }) || [];
+
+                return (
+                  <div className="bg-white/5 dark:bg-black/10 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/10 dark:border-gray-800/20">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                      {filteredRecommendations.length > 0 ? (
+                        <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                      ) : (
+                        <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      )}
+                      {filteredRecommendations.length > 0 ? 'Öneriler' : 'Sistem Durumu'}
+                    </h4>
+                    <div className="space-y-2">
+                      {filteredRecommendations.length > 0 ? (
+                        filteredRecommendations.map((recommendation, index) => {
+                          const renderRecommendation = () => {
+                            if (typeof recommendation === 'string') {
+                              return recommendation;
+                            }
+                            if (recommendation && typeof recommendation === 'object' && 'message' in recommendation) {
+                              return recommendation.message;
+                            }
+                            return JSON.stringify(recommendation);
+                          };
+
+                          return (
+                            <div key={index} className="p-3 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-xl">
+                              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                                {renderRecommendation()}
+                              </p>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 bg-green-50/50 dark:bg-green-900/20 rounded-xl">
+                          <div className="flex items-center gap-2 mb-2">
+                            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                            <p className="font-medium text-green-900 dark:text-green-100">Mükemmel! 🎉</p>
+                          </div>
+                          <p className="text-sm text-green-800 dark:text-green-200">
+                            Yeni Redis planınızla (256 connection) sistem çok rahat çalışıyor. 
+                            Herhangi bir optimizasyon önerisi bulunmuyor.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setCleanupModalOpen(true)}
+                    variant="outline"
+                    className="bg-red-100/50 dark:bg-red-900/30 border-red-300/50 dark:border-red-700/50 text-red-800 dark:text-red-200 hover:bg-red-200/50 dark:hover:bg-red-800/30"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Connection Temizle
+                  </Button>
+                </div>
+                <Button
+                  onClick={() => setConnectionDetailsModalOpen(false)}
+                  variant="outline"
+                >
+                  Kapat
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800 dark:border-gray-200 mx-auto mb-4"></div>
+              <p>Connection detayları yükleniyor...</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Connection Cleanup Modal */}
+      <Dialog open={cleanupModalOpen} onOpenChange={setCleanupModalOpen}>
+        <DialogContent className="bg-white/90 dark:bg-black/90 backdrop-blur-xl border border-gray-200/30 dark:border-gray-700/30">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 dark:text-red-400">
+              Redis Connection Temizleme
+            </DialogTitle>
+            <DialogDescription>
+              Redis connection'larını temizlemek istediğinizden emin misiniz?
+              <br />
+              <span className="text-red-600 text-sm mt-2 block">
+                🧹 Celery worker'lar yeniden başlatılacak
+              </span>
+              <span className="text-blue-600 text-sm">
+                ⚡ FastAPI connection pool'u temizlenecek
+              </span>
+              <span className="text-green-600 text-sm">
+                ✅ Bu işlem güvenli ve geri alınabilir
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCleanupModalOpen(false)}
+              disabled={operationLoading}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={handleCleanupConnections}
+              disabled={operationLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {operationLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  Temizleniyor...
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" />
+                  Connection'ları Temizle
                 </div>
               )}
             </Button>

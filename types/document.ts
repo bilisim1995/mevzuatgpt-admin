@@ -4,6 +4,7 @@ export interface DocumentUpload {
   description: string;
   keywords: string;
   source_institution: string;
+  belge_adi?: string;
   file: File;
 }
 
@@ -21,6 +22,8 @@ export interface Document {
   description?: string;
   keywords?: string;
   institution?: string;
+  belge_adi?: string;
+  document_title?: string;
   has_error?: boolean;
 }
 

@@ -12,12 +12,13 @@ export interface RedisInfo {
 }
 
 export interface CeleryInfo {
-  status: 'healthy' | 'warning' | 'error';
-  active_workers: number;
-  pending_tasks?: number;
-  active_tasks?: number;
-  worker_names?: string[];
-  error?: string;
+  worker_status: 'running' | 'stopped';
+  process_count: number;
+  process_ids: string[];
+  task_stats: {
+    total_tasks_in_redis: number;
+  };
+  timestamp: string;
 }
 
 export interface RedisConnectionInfo {
