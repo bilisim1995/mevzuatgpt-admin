@@ -25,6 +25,13 @@ import { DashboardStatsComponent } from "@/components/dashboard/dashboard-stats"
 import { AnnouncementList } from "@/components/announcements/announcement-list"
 import { SettingsPanel } from "@/components/settings/settings-panel"
 import { PurchaseList } from "@/components/purchases/purchase-list"
+import { MevzuatTara } from "@/components/portal/mevzuat-tara"
+import { EdevletScraper } from "@/components/portal/edevlet-scraper"
+import { Kurumlar } from "@/components/portal/kurumlar"
+import { KurumDuyurular } from "@/components/portal/kurum-duyurular"
+import { Icerik } from "@/components/portal/icerik"
+import { SistemDurumu } from "@/components/portal/sistem-durumu"
+import { MevzuatTaraDataSource } from "@/components/documents/mevzuat-tara"
 import { MESSAGES } from "@/constants/messages"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
@@ -92,6 +99,8 @@ export default function DashboardPage() {
         return <BulkUploadForm />
       case 'pdf-management':
         return <DocumentList />
+      case 'mevzuat-tara-datasource':
+        return <MevzuatTaraDataSource />
       case 'users':
         return <UserList />
       case 'announcements':
@@ -132,6 +141,18 @@ export default function DashboardPage() {
         return <SettingsPanel />
       case 'billing':
         return <PurchaseList />
+      case 'mevzuat-tara':
+        return <MevzuatTara />
+      case 'edevlet-scraper':
+        return <EdevletScraper />
+      case 'kurumlar':
+        return <Kurumlar />
+      case 'kurum-duyurular':
+        return <KurumDuyurular />
+      case 'icerik':
+        return <Icerik />
+      case 'sistem-durumu':
+        return <SistemDurumu />
       default:
         return null
     }

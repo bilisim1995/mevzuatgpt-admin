@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Home, Database, Users, ChevronRight, Bot, MessageSquare, CreditCard, Search, Settings, Activity, Megaphone, Receipt } from "lucide-react"
+import { Home, Database, Users, ChevronRight, Bot, MessageSquare, CreditCard, Search, Settings, Activity, Megaphone, Receipt, Globe } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MESSAGES } from "@/constants/messages"
 
@@ -36,7 +36,22 @@ export function Sidebar({ activeItem, onItemClick }: SidebarProps) {
       children: [
         { id: 'single-upload', label: 'Tekli PDF Yükleme' },
         { id: 'bulk-upload', label: 'Çoklu PDF Yükleme' },
-        { id: 'pdf-management', label: 'PDF Yönetimi' }
+        { id: 'pdf-management', label: 'PDF Yönetimi' },
+        { id: 'mevzuat-tara-datasource', label: 'Mevzuat Tara' }
+      ]
+    },
+    {
+      id: 'portal',
+      label: 'Portal',
+      icon: Globe,
+      hasChildren: true,
+      children: [
+        { id: 'mevzuat-tara', label: 'Mevzuat Tara' },
+        { id: 'edevlet-scraper', label: 'e-Devlet Scraper' },
+        { id: 'kurumlar', label: 'Kurumlar' },
+        { id: 'kurum-duyurular', label: 'Kurum Duyurular' },
+        { id: 'icerik', label: 'İçerik' },
+        { id: 'sistem-durumu', label: 'Sistem Durumu' }
       ]
     },
     {
