@@ -62,18 +62,28 @@ function getAuthHeaders() {
   };
 }
 
-export async function getPortalScan(kurumId: string): Promise<PortalScanResponse> {
+export async function getPortalScan(kurumId: string, detsis?: string, type?: string): Promise<PortalScanResponse> {
   try {
     const headers = getAuthHeaders();
+    
+    const requestBody: any = {
+      id: kurumId
+    };
+    
+    if (detsis !== undefined) {
+      requestBody.detsis = detsis;
+    }
+    
+    if (type !== undefined) {
+      requestBody.type = type;
+    }
     
     const response = await fetch(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/portal-scan`,
       {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({
-          id: kurumId
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
@@ -1133,6 +1143,16 @@ export interface MetadataError {
   detail: string;
 }
 
+export interface DeleteMetadataResponse {
+  success: boolean;
+  message: string;
+  deleted: {
+    metadata: number;
+    content: number;
+    bunny_pdf: boolean;
+  };
+}
+
 export interface Content {
   _id: string;
   metadata_id: string;
@@ -1326,6 +1346,57 @@ export async function getContentByMetadata(metadataId: string): Promise<ContentR
   }
 }
 
+export async function deleteMetadata(id: string): Promise<DeleteMetadataResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/metadata/${id}`,
+      {
+        method: 'DELETE',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400 || response.status === 404) {
+        try {
+          const errorData: MetadataError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      if (response.status === 500) {
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Sunucu hatası oluştu');
+        } catch {
+          throw new Error('Sunucu hatası oluştu');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
 export async function updateContentByMetadata(metadataId: string, icerik: string): Promise<ContentResponse> {
   try {
     const headers = getAuthHeaders();
@@ -1441,18 +1512,28 @@ export interface MevzuatGPTScanError {
   details?: string;
 }
 
-export async function getMevzuatGPTScan(kurumId: string): Promise<MevzuatGPTScanResponse> {
+export async function getMevzuatGPTScan(kurumId: string, detsis?: string, type?: string): Promise<MevzuatGPTScanResponse> {
   try {
     const headers = getAuthHeaders();
+    
+    const requestBody: any = {
+      id: kurumId
+    };
+    
+    if (detsis !== undefined) {
+      requestBody.detsis = detsis;
+    }
+    
+    if (type !== undefined) {
+      requestBody.type = type;
+    }
     
     const response = await fetch(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/mevzuatgpt/scrape`,
       {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({
-          id: kurumId
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
@@ -1496,6 +1577,8 @@ export interface ProcessDocumentRequest {
   mode: "m" | "p" | "t";
   category?: string;
   document_name?: string;
+  detsis?: string;
+  type?: string;
 }
 
 export interface ProcessDocumentResponse {
@@ -1531,6 +1614,9 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
       }
     );
 
+    // Önce response body'yi text olarak al (hem hata hem başarı durumunda kullanabilmek için)
+    const responseText = await response.text();
+    
     if (!response.ok) {
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
@@ -1542,28 +1628,59 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
         throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
       }
       
-      if (response.status === 400) {
+      // Detaylı hata mesajı al
+      let errorMessage = `API Hatası: ${response.status} - ${response.statusText}`;
+      let errorDetails = "";
+      
+      if (responseText) {
         try {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Geçersiz istek');
-        } catch {
-          throw new Error('Geçersiz istek');
+          const errorData = JSON.parse(responseText);
+          // Farklı hata formatlarını kontrol et
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+            errorDetails = JSON.stringify(errorData, null, 2);
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+            errorDetails = JSON.stringify(errorData, null, 2);
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+            errorDetails = JSON.stringify(errorData, null, 2);
+          } else if (typeof errorData === 'string') {
+            errorMessage = errorData;
+          } else {
+            errorMessage = `Sunucu hatası (${response.status})`;
+            errorDetails = JSON.stringify(errorData, null, 2);
+          }
+        } catch (parseError) {
+          // JSON parse edilemezse raw text'i kullan
+          errorMessage = `Sunucu hatası (${response.status}): ${responseText}`;
+          errorDetails = responseText;
         }
       }
       
-      if (response.status === 500) {
-        try {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Sunucu hatası oluştu');
-        } catch {
-          throw new Error('Sunucu hatası oluştu');
-        }
-      }
+      // Detaylı hata mesajı oluştur
+      const fullErrorMessage = errorDetails 
+        ? `${errorMessage}\n\nDetaylar:\n${errorDetails}`
+        : errorMessage;
       
-      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+      throw new Error(fullErrorMessage);
     }
 
-    const result = await response.json();
+    // Başarılı yanıtı parse et
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      throw new Error(`Yanıt parse edilemedi: ${responseText}`);
+    }
+    
+    // Response başarısız olsa bile 200 OK dönebilir, kontrol et
+    if (!result.success) {
+      const errorMsg = result.message || result.detail || result.error || 'İşlem başarısız oldu';
+      const errorDetails = JSON.stringify(result, null, 2);
+      throw new Error(`${errorMsg}\n\nDetaylar:\n${errorDetails}`);
+    }
+    
     return result;
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {

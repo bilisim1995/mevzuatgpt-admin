@@ -15,12 +15,14 @@ type StatusFilter = "all" | "uploaded" | "not-uploaded"
 
 export function MevzuatTaraDataSource() {
   const [selectedInstitution, setSelectedInstitution] = useState<string>("")
+  const [queryType, setQueryType] = useState<string>("kaysis")
   const [loading, setLoading] = useState(false)
   const [loadingKurumlar, setLoadingKurumlar] = useState(false)
   const [kurumlar, setKurumlar] = useState<Kurum[]>([])
   const [data, setData] = useState<MevzuatGPTScanResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [sectionFilter, setSectionFilter] = useState<string>("all")
   const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({})
   const [mevzuatGPTDocuments, setMevzuatGPTDocuments] = useState<Set<string>>(new Set())
   const [portalDocuments, setPortalDocuments] = useState<Set<string>>(new Set())
@@ -55,6 +57,28 @@ export function MevzuatTaraDataSource() {
     fetchKurumlar()
   }, [])
 
+  // Başlığı normalize et (karşılaştırma için)
+  const normalizeTitle = (title: string): string => {
+    if (!title) return ""
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ") // Birden fazla boşluğu tek boşluğa çevir
+      .replace(/[^\w\s]/g, "") // Özel karakterleri kaldır (noktalama işaretleri)
+      .replace(/ı/g, "i")
+      .replace(/ğ/g, "g")
+      .replace(/ü/g, "u")
+      .replace(/ş/g, "s")
+      .replace(/ö/g, "o")
+      .replace(/ç/g, "c")
+      .replace(/İ/g, "i")
+      .replace(/Ğ/g, "g")
+      .replace(/Ü/g, "u")
+      .replace(/Ş/g, "s")
+      .replace(/Ö/g, "o")
+      .replace(/Ç/g, "c")
+  }
+
   // Mevcut belgeleri yükle ve başlıklara göre eşleştir
   const loadExistingDocuments = async (): Promise<{ mevzuatGPT: Set<string>, portal: Set<string> }> => {
     const mevzuatGPTTitles = new Set<string>()
@@ -62,12 +86,18 @@ export function MevzuatTaraDataSource() {
     
     try {
       // MevzuatGPT belgelerini çek
-      const mevzuatGPTDocs = await getDocuments(1, 1000) // Tüm belgeleri çek
-      mevzuatGPTDocs.documents.forEach(doc => {
-        // Başlığı normalize et (küçük harf, boşlukları temizle)
-        const normalizedTitle = doc.title?.toLowerCase().trim() || doc.document_title?.toLowerCase().trim() || ""
-        if (normalizedTitle) {
-          mevzuatGPTTitles.add(normalizedTitle)
+      const mevzuatGPTDocs = await getDocuments() // Tüm belgeleri çek
+      
+      mevzuatGPTDocs.documents.forEach((doc) => {
+        // Başlığı normalize et - hem title hem document_title kontrol et
+        const title1 = normalizeTitle(doc.title || "")
+        const title2 = normalizeTitle(doc.document_title || "")
+        
+        if (title1) {
+          mevzuatGPTTitles.add(title1)
+        }
+        if (title2 && title2 !== title1) {
+          mevzuatGPTTitles.add(title2)
         }
       })
       setMevzuatGPTDocuments(mevzuatGPTTitles)
@@ -75,9 +105,9 @@ export function MevzuatTaraDataSource() {
       // Portal belgelerini çek
       const portalDocs = await getMetadataList(1000, 0)
       if (portalDocs.success && portalDocs.data) {
-        portalDocs.data.forEach(doc => {
+        portalDocs.data.forEach((doc) => {
           // Başlığı normalize et
-          const normalizedTitle = doc.pdf_adi?.toLowerCase().trim() || ""
+          const normalizedTitle = normalizeTitle(doc.pdf_adi || "")
           if (normalizedTitle) {
             portalTitles.add(normalizedTitle)
           }
@@ -102,6 +132,10 @@ export function MevzuatTaraDataSource() {
       return
     }
 
+    // Seçili kurumun detsis bilgisini al
+    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+    const detsis = selectedKurum?.detsis || ""
+
     setLoading(true)
     setError(null)
     setData(null)
@@ -111,21 +145,20 @@ export function MevzuatTaraDataSource() {
       const existingDocs = await loadExistingDocuments()
       
       // Sonra tarama yap
-      const result = await getMevzuatGPTScan(selectedInstitution)
-      
-      // Scraping verisini konsola yazdır
-      console.log("=== SCRAPING VERİSİ ===")
-      console.log("Raw Result:", JSON.stringify(result, null, 2))
-      console.log("MevzuatGPT Documents:", Array.from(existingDocs.mevzuatGPT))
-      console.log("Portal Documents:", Array.from(existingDocs.portal))
+      const result = await getMevzuatGPTScan(selectedInstitution, detsis, queryType)
       
       // Başlıklara göre eşleştirme yap
       if (result.data && result.data.sections) {
         result.data.sections = result.data.sections.map(section => ({
           ...section,
           items: section.items.map(item => {
-            const normalizedTitle = item.baslik?.toLowerCase().trim() || ""
+            const originalTitle = item.baslik || ""
+            const normalizedTitle = normalizeTitle(originalTitle)
+            
+            // MevzuatGPT'de var mı kontrol et
             const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
+            
+            // Portal'da var mı kontrol et
             const isInPortal = existingDocs.portal.has(normalizedTitle)
             
             const updatedItem = {
@@ -134,23 +167,10 @@ export function MevzuatTaraDataSource() {
               portal: isInPortal || item.portal === true || item.portal === "true"
             }
             
-            // Her item için detaylı log
-            if (item.baslik?.includes("tunus")) {
-              console.log("=== TUNUS BELGESİ DETAYI ===")
-              console.log("Orijinal Item:", item)
-              console.log("Normalized Title:", normalizedTitle)
-              console.log("isInMevzuatGPT:", isInMevzuatGPT)
-              console.log("isInPortal:", isInPortal)
-              console.log("Updated Item:", updatedItem)
-            }
-            
             return updatedItem
           })
         }))
       }
-      
-      console.log("=== GÜNCELLENMİŞ VERİ ===")
-      console.log("Updated Result:", JSON.stringify(result, null, 2))
       
       setData(result)
       toast({
@@ -173,6 +193,12 @@ export function MevzuatTaraDataSource() {
 
   // Filtrelenmiş item'ları getir
   const getFilteredItems = (section: MevzuatGPTScanSection) => {
+    // Önce bölüm filtresini kontrol et
+    if (sectionFilter !== "all" && section.section_title !== sectionFilter) {
+      return []
+    }
+    
+    // Sonra durum filtresini uygula
     if (statusFilter === "all") return section.items
     if (statusFilter === "uploaded") {
       return section.items.filter(item => item.mevzuatgpt === true || item.mevzuatgpt === "true")
@@ -182,6 +208,9 @@ export function MevzuatTaraDataSource() {
     }
     return section.items
   }
+  
+  // Mevcut bölümleri al (filtre için)
+  const availableSections = data?.data?.sections?.map(s => s.section_title) || []
 
   // Toplam yüklenen ve yüklenmeyen sayıları hesapla
   const calculateStats = () => {
@@ -215,32 +244,51 @@ export function MevzuatTaraDataSource() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
-            <label htmlFor="institution-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Taranacak Kurum Seç:
-            </label>
-            <Select 
-              value={selectedInstitution} 
-              onValueChange={setSelectedInstitution}
-              disabled={loadingKurumlar}
-            >
-              <SelectTrigger id="institution-select" className="w-[300px] min-w-[300px]">
-                <SelectValue placeholder={loadingKurumlar ? "Yükleniyor..." : "Kurum seçin"} />
-              </SelectTrigger>
-              <SelectContent>
-                {loadingKurumlar ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                ) : (
-                  kurumlar.map((kurum) => (
-                    <SelectItem key={kurum._id} value={kurum._id}>
-                      {kurum.kurum_adi}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label htmlFor="institution-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Taranacak Kurum Seç:
+              </label>
+              <Select 
+                value={selectedInstitution} 
+                onValueChange={setSelectedInstitution}
+                disabled={loadingKurumlar}
+              >
+                <SelectTrigger id="institution-select" className="w-[300px] min-w-[300px]">
+                  <SelectValue placeholder={loadingKurumlar ? "Yükleniyor..." : "Kurum seçin"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingKurumlar ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  ) : (
+                    kurumlar.map((kurum) => (
+                      <SelectItem key={kurum._id} value={kurum._id}>
+                        {kurum.kurum_adi}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="query-type-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Sorgu Tipi:
+              </label>
+              <Select 
+                value={queryType} 
+                onValueChange={setQueryType}
+                disabled={loading}
+              >
+                <SelectTrigger id="query-type-select" className="w-[150px] min-w-[150px]">
+                  <SelectValue placeholder="Sorgu tipi seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kaysis">kaysis</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button 
               onClick={handleScan} 
               disabled={loading || !selectedInstitution}
@@ -355,39 +403,61 @@ export function MevzuatTaraDataSource() {
           {/* Bölümler ve Belgeler Tablosu */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-4">
                 <CardTitle>Bölümler ve Belgeler</CardTitle>
-                <div className="flex items-center gap-2">
-                  <label htmlFor="status-filter" className="text-sm font-medium">
-                    Durum Filtresi:
-                  </label>
-                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-                    <SelectTrigger id="status-filter" className="w-[180px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Tümü</SelectItem>
-                      <SelectItem value="uploaded">Yüklenen</SelectItem>
-                      <SelectItem value="not-uploaded">Yüklenmeyen</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="section-filter" className="text-sm font-medium">
+                      Bölüm:
+                    </label>
+                    <Select value={sectionFilter} onValueChange={setSectionFilter}>
+                      <SelectTrigger id="section-filter" className="w-[200px]">
+                        <SelectValue placeholder="Tüm Bölümler" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tüm Bölümler</SelectItem>
+                        {availableSections.map((sectionTitle) => (
+                          <SelectItem key={sectionTitle} value={sectionTitle}>
+                            {sectionTitle}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="status-filter" className="text-sm font-medium">
+                      Durum:
+                    </label>
+                    <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+                      <SelectTrigger id="status-filter" className="w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tümü</SelectItem>
+                        <SelectItem value="uploaded">Yüklenen</SelectItem>
+                        <SelectItem value="not-uploaded">Yüklenmeyen</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden">
-                <div className="h-[600px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="bg-white dark:bg-gray-900">
+                    <TableRow>
+                      <TableHead className="w-[200px] bg-white dark:bg-gray-900">Bölüm</TableHead>
+                      <TableHead className="bg-white dark:bg-gray-900">Başlık</TableHead>
+                      <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">MevzuatGPT</TableHead>
+                      <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">Portal</TableHead>
+                      <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">İşlemler</TableHead>
+                      <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">Link</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                </Table>
+                <div className="h-[600px] overflow-y-auto overflow-x-auto">
                   <Table>
-                    <TableHeader className="sticky top-0 bg-white dark:bg-gray-900 z-10 shadow-sm">
-                      <TableRow>
-                        <TableHead className="w-[200px] bg-white dark:bg-gray-900">Bölüm</TableHead>
-                        <TableHead className="bg-white dark:bg-gray-900">Başlık</TableHead>
-                        <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">MevzuatGPT</TableHead>
-                        <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">Portal</TableHead>
-                        <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">İşlemler</TableHead>
-                        <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">Link</TableHead>
-                      </TableRow>
-                    </TableHeader>
                     <TableBody>
                     {data.data.sections.map((section) =>
                       getFilteredItems(section).map((item) => (
@@ -417,12 +487,18 @@ export function MevzuatTaraDataSource() {
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
                                   
                                   try {
+                                    // Seçili kurumun detsis bilgisini al
+                                    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+                                    const detsis = selectedKurum?.detsis || ""
+                                    
                                     await processDocument({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "m",
                                       category: section.section_title,
                                       document_name: item.baslik,
+                                      detsis: detsis,
+                                      type: queryType,
                                     })
                                     
                                     // Local state'i güncelle - MevzuatGPT durumunu true yap
@@ -512,12 +588,18 @@ export function MevzuatTaraDataSource() {
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
                                   
                                   try {
+                                    // Seçili kurumun detsis bilgisini al
+                                    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+                                    const detsis = selectedKurum?.detsis || ""
+                                    
                                     await processDocument({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "p",
                                       category: section.section_title,
                                       document_name: item.baslik,
+                                      detsis: detsis,
+                                      type: queryType,
                                     })
                                     
                                     // Local state'i güncelle - Portal durumunu true yap
@@ -605,12 +687,18 @@ export function MevzuatTaraDataSource() {
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
                                   
                                   try {
+                                    // Seçili kurumun detsis bilgisini al
+                                    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+                                    const detsis = selectedKurum?.detsis || ""
+                                    
                                     await processDocument({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "t",
                                       category: section.section_title,
                                       document_name: item.baslik,
+                                      detsis: detsis,
+                                      type: queryType,
                                     })
                                     
                                     // Local state'i güncelle - Her iki durumu da true yap

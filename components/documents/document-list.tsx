@@ -174,8 +174,21 @@ export function DocumentList() {
       // Belge listesini yenile
       await fetchDocuments(1, true)
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata'
+      console.error('Toplu silme hatası:', error)
+      console.error('Filtreler:', bulkDeleteFilters)
+      
+      // Hata mesajını daha detaylı göster
       toast.error('Toplu silme işlemi sırasında hata oluştu', {
-        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+        description: errorMessage,
+        duration: 10000, // 10 saniye göster
+        action: {
+          label: 'Detayları Gör',
+          onClick: () => {
+            // Hata detaylarını alert ile göster
+            alert(`Hata Detayları:\n\n${errorMessage}\n\nKullanılan Filtreler:\n${JSON.stringify(bulkDeleteFilters, null, 2)}`)
+          }
+        }
       })
     } finally {
       setBulkDeleteLoading(false)

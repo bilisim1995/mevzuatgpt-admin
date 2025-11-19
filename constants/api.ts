@@ -1,6 +1,6 @@
 export const API_CONFIG = {
-  BASE_URL: "https://app.mevzuatgpt.org",
-  SCRAPPER_BASE_URL: "http://localhost:8001",
+  BASE_URL: "http://localhost:5000",
+  SCRAPPER_BASE_URL: "http://localhost:8000",
   ENDPOINTS: {
     LOGIN: "/api/auth/login",
     UPLOAD_DOCUMENT: "/api/admin/upload-document",

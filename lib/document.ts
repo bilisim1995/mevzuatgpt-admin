@@ -47,8 +47,8 @@ export async function uploadDocument(documentData: DocumentUpload): Promise<{ ta
 }
 
 export async function getDocuments(
-  page: number = 1,
-  limit: number = 20,
+  page?: number,
+  limit?: number,
   category?: string,
   status?: string
 ): Promise<DocumentsResponse> {
@@ -58,17 +58,20 @@ export async function getDocuments(
     throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
   }
 
-  const params = new URLSearchParams({
-    page: page.toString(),
-    limit: limit.toString(),
-  });
+  const params = new URLSearchParams();
 
+  if (page !== undefined) params.append('page', page.toString());
+  if (limit !== undefined) params.append('limit', limit.toString());
   if (category) params.append('category', category);
   if (status) params.append('status', status);
 
   try {
+    const url = params.toString() 
+      ? `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DOCUMENTS}?${params}`
+      : `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DOCUMENTS}`;
+    
     const response = await fetch(
-      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DOCUMENTS}?${params}`,
+      url,
       {
         method: 'GET',
         headers: {
@@ -121,10 +124,10 @@ export async function getDocuments(
         updated_at: doc.updated_at,
         uploaded_by: doc.uploaded_by
       })),
-      total_count: result.data.pagination.total || 0,
-      has_more: result.data.pagination.has_next || false,
-      page: result.data.pagination.page || page,
-      limit: limit
+      total_count: result.data.pagination?.total || 0,
+      has_more: result.data.pagination?.has_next || false,
+      page: result.data.pagination?.page || page || 1,
+      limit: limit || result.data.pagination?.limit || 20
     };
 
     return transformedResponse;
@@ -272,7 +275,37 @@ export async function bulkDeleteDocuments(filters: BulkDeleteFilters): Promise<B
       }
       throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
     }
-    throw new Error(`Toplu belge silme işlemi sırasında hata oluştu: ${response.status}`);
+    
+    // Detaylı hata mesajı al
+    let errorMessage = `Toplu belge silme işlemi sırasında hata oluştu (${response.status})`;
+    try {
+      const errorData = await response.json();
+      if (errorData.detail) {
+        errorMessage = errorData.detail;
+      } else if (errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.error) {
+        errorMessage = errorData.error;
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else {
+        // Tüm hata objesini string'e çevir
+        errorMessage = JSON.stringify(errorData, null, 2);
+      }
+    } catch (parseError) {
+      // JSON parse edilemezse response text'i al
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          errorMessage = `${errorMessage}\n\nSunucu yanıtı: ${responseText}`;
+        }
+      } catch (textError) {
+        // Hiçbir şey alınamazsa sadece status code göster
+        errorMessage = `${errorMessage}\n\nHTTP Status: ${response.status} ${response.statusText}`;
+      }
+    }
+    
+    throw new Error(errorMessage);
   }
 
   const result = await response.json();

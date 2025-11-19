@@ -13,6 +13,7 @@ type StatusFilter = "all" | "portal" | "not-portal"
 
 export function MevzuatTara() {
   const [selectedInstitution, setSelectedInstitution] = useState<string>("")
+  const [queryType, setQueryType] = useState<string>("kaysis")
   const [loading, setLoading] = useState(false)
   const [loadingKurumlar, setLoadingKurumlar] = useState(false)
   const [kurumlar, setKurumlar] = useState<Kurum[]>([])
@@ -59,10 +60,14 @@ export function MevzuatTara() {
       return
     }
 
+    // Seçili kurumun detsis bilgisini al
+    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+    const detsis = selectedKurum?.detsis || ""
+
     setLoading(true)
     setError(null)
     try {
-      const result = await getPortalScan(selectedInstitution)
+      const result = await getPortalScan(selectedInstitution, detsis, queryType)
       setData(result)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Veri çekilirken bir hata oluştu"
@@ -100,32 +105,51 @@ export function MevzuatTara() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
-            <label htmlFor="institution-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Taranacak Kurum Seç:
-            </label>
-            <Select 
-              value={selectedInstitution} 
-              onValueChange={setSelectedInstitution}
-              disabled={loadingKurumlar}
-            >
-              <SelectTrigger id="institution-select" className="w-[300px] min-w-[300px]">
-                <SelectValue placeholder={loadingKurumlar ? "Yükleniyor..." : "Kurum seçin"} />
-              </SelectTrigger>
-              <SelectContent>
-                {loadingKurumlar ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                ) : (
-                  kurumlar.map((kurum) => (
-                    <SelectItem key={kurum._id} value={kurum._id}>
-                      {kurum.kurum_adi}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label htmlFor="institution-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Taranacak Kurum Seç:
+              </label>
+              <Select 
+                value={selectedInstitution} 
+                onValueChange={setSelectedInstitution}
+                disabled={loadingKurumlar}
+              >
+                <SelectTrigger id="institution-select" className="w-[300px] min-w-[300px]">
+                  <SelectValue placeholder={loadingKurumlar ? "Yükleniyor..." : "Kurum seçin"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingKurumlar ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  ) : (
+                    kurumlar.map((kurum) => (
+                      <SelectItem key={kurum._id} value={kurum._id}>
+                        {kurum.kurum_adi}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="query-type-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Sorgu Tipi:
+              </label>
+              <Select 
+                value={queryType} 
+                onValueChange={setQueryType}
+                disabled={loading}
+              >
+                <SelectTrigger id="query-type-select" className="w-[150px] min-w-[150px]">
+                  <SelectValue placeholder="Sorgu tipi seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kaysis">kaysis</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button 
               onClick={handleScan} 
               disabled={loading || !selectedInstitution}

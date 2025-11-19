@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getMetadataList, getMetadata, updateMetadata, getContentByMetadata, updateContentByMetadata, getKurumlar, Metadata, Content, Kurum } from "@/lib/scrapper"
-import { Loader2, Edit, FileText, ExternalLink } from "lucide-react"
+import { getMetadataList, getMetadata, updateMetadata, getContentByMetadata, updateContentByMetadata, deleteMetadata, getKurumlar, Metadata, Content, Kurum } from "@/lib/scrapper"
+import { Loader2, Edit, FileText, ExternalLink, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export function Icerik() {
@@ -28,6 +29,8 @@ export function Icerik() {
   const [filterKurumId, setFilterKurumId] = useState<string>("all")
   const [filterBelgeTuru, setFilterBelgeTuru] = useState<string>("all")
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -200,12 +203,68 @@ export function Icerik() {
     }
   }
 
+  // Metadata sil
+  const handleDeleteMetadata = async (id: string) => {
+    setDeletingId(id)
+    try {
+      const result = await deleteMetadata(id)
+      toast({
+        title: "Başarılı",
+        description: result.message || "İçerik başarıyla silindi",
+      })
+      // Listeyi yenile
+      fetchMetadataList()
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "İçerik silinirken bir hata oluştu"
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   // Kurum adını getir
   const getKurumAdi = (kurumId?: string) => {
     if (!kurumId) return "-"
     const kurum = kurumlar.find(k => k._id === kurumId)
     return kurum?.kurum_adi || kurumId
   }
+
+  // Filtrelenmiş metadata listesi
+  const filteredMetadataList = metadataList.filter(metadata => {
+    // Filtreler
+    if (filterKurumId !== "all" && metadata.kurum_id !== filterKurumId) return false
+    if (filterBelgeTuru !== "all" && metadata.belge_turu !== filterBelgeTuru) return false
+    if (filterStatus !== "all" && metadata.status !== filterStatus) return false
+    
+    // Arama
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      const pdfAdi = (metadata.pdf_adi || "").toLowerCase()
+      const kurumAdi = getKurumAdi(metadata.kurum_id).toLowerCase()
+      const belgeTuru = (metadata.belge_turu || "").toLowerCase()
+      const anahtarKelimeler = (metadata.anahtar_kelimeler || "").toLowerCase()
+      const aciklama = (metadata.aciklama || "").toLowerCase()
+      const etiketler = (metadata.etiketler || "").toLowerCase()
+      
+      // Eğer hiçbir alanda eşleşme yoksa false döndür
+      if (
+        !pdfAdi.includes(query) &&
+        !kurumAdi.includes(query) &&
+        !belgeTuru.includes(query) &&
+        !anahtarKelimeler.includes(query) &&
+        !aciklama.includes(query) &&
+        !etiketler.includes(query)
+      ) {
+        return false
+      }
+    }
+    
+    return true
+  })
 
   return (
     <div className="space-y-6">
@@ -282,6 +341,14 @@ export function Icerik() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex-1 min-w-[300px]">
+              <Input
+                placeholder="PDF adı, kurum, belge türü, anahtar kelimeler veya açıklama ile ara..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full"
+              />
+            </div>
           </div>
           {loading ? (
             <div className="flex items-center justify-center p-8">
@@ -291,28 +358,27 @@ export function Icerik() {
             <div className="text-center p-8 text-gray-500 dark:text-gray-400">
               Henüz metadata eklenmemiş
             </div>
+          ) : filteredMetadataList.length === 0 ? (
+            <div className="text-center p-8 text-gray-500 dark:text-gray-400">
+              Arama kriterlerine uygun metadata bulunamadı
+            </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader className="bg-white dark:bg-gray-900">
+                  <TableRow>
+                    <TableHead className="w-[300px] bg-white dark:bg-gray-900">PDF Adı</TableHead>
+                    <TableHead className="w-[200px] bg-white dark:bg-gray-900">Kurum</TableHead>
+                    <TableHead className="w-[150px] bg-white dark:bg-gray-900">Belge Türü</TableHead>
+                    <TableHead className="w-[150px] bg-white dark:bg-gray-900">Durum</TableHead>
+                    <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">İşlemler</TableHead>
+                  </TableRow>
+                </TableHeader>
+              </Table>
               <div className="h-[600px] overflow-y-auto overflow-x-auto">
                 <Table>
-                  <TableHeader className="sticky top-0 bg-white dark:bg-gray-900 z-10 shadow-sm">
-                    <TableRow>
-                      <TableHead className="w-[300px] bg-white dark:bg-gray-900">PDF Adı</TableHead>
-                      <TableHead className="w-[200px] bg-white dark:bg-gray-900">Kurum</TableHead>
-                      <TableHead className="w-[150px] bg-white dark:bg-gray-900">Belge Türü</TableHead>
-                      <TableHead className="w-[150px] bg-white dark:bg-gray-900">Durum</TableHead>
-                      <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">İşlemler</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                    <TableBody>
-                      {metadataList
-                        .filter(metadata => {
-                          if (filterKurumId !== "all" && metadata.kurum_id !== filterKurumId) return false
-                          if (filterBelgeTuru !== "all" && metadata.belge_turu !== filterBelgeTuru) return false
-                          if (filterStatus !== "all" && metadata.status !== filterStatus) return false
-                          return true
-                        })
-                        .map((metadata) => (
+                  <TableBody>
+                    {filteredMetadataList.map((metadata) => (
                         <TableRow key={metadata._id}>
                         <TableCell className="w-[300px] font-medium">
                           {metadata.pdf_adi || "-"}
@@ -333,14 +399,52 @@ export function Icerik() {
                           </span>
                         </TableCell>
                         <TableCell className="w-[100px] text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(metadata)}
-                            className="h-8 w-8"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(metadata)}
+                              className="h-8 w-8"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  disabled={deletingId === metadata._id}
+                                >
+                                  {deletingId === metadata._id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>İçeriği Sil</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Bu işlem geri alınamaz. Bu içerik kalıcı olarak silinecektir.
+                                    <br />
+                                    <br />
+                                    <strong>PDF Adı:</strong> {metadata.pdf_adi || "-"}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>İptal</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDeleteMetadata(metadata._id)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    Sil
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
