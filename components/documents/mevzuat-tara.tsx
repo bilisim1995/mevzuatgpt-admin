@@ -79,6 +79,8 @@ export function MevzuatTaraDataSource() {
       .replace(/Ç/g, "c")
   }
 
+  const isTruthy = (value: boolean | string | undefined | null) => value === true || value === "true"
+
   // Mevcut belgeleri yükle ve başlıklara göre eşleştir
   const loadExistingDocuments = async (): Promise<{ mevzuatGPT: Set<string>, portal: Set<string> }> => {
     const mevzuatGPTTitles = new Set<string>()
@@ -163,8 +165,8 @@ export function MevzuatTaraDataSource() {
             
             const updatedItem = {
               ...item,
-              mevzuatgpt: isInMevzuatGPT || item.mevzuatgpt === true || item.mevzuatgpt === "true",
-              portal: isInPortal || item.portal === true || item.portal === "true"
+              mevzuatgpt: isInMevzuatGPT || isTruthy(item.mevzuatgpt),
+              portal: isInPortal || isTruthy(item.portal)
             }
             
             return updatedItem
@@ -201,10 +203,10 @@ export function MevzuatTaraDataSource() {
     // Sonra durum filtresini uygula
     if (statusFilter === "all") return section.items
     if (statusFilter === "uploaded") {
-      return section.items.filter(item => item.mevzuatgpt === true || item.mevzuatgpt === "true")
+      return section.items.filter(item => isTruthy(item.mevzuatgpt))
     }
     if (statusFilter === "not-uploaded") {
-      return section.items.filter(item => !(item.mevzuatgpt === true || item.mevzuatgpt === "true"))
+      return section.items.filter(item => !isTruthy(item.mevzuatgpt))
     }
     return section.items
   }
@@ -221,7 +223,7 @@ export function MevzuatTaraDataSource() {
     
     data.data.sections.forEach(section => {
       section.items.forEach(item => {
-        if (item.mevzuatgpt === true || item.mevzuatgpt === "true") {
+        if (isTruthy(item.mevzuatgpt)) {
           uploaded++
         } else {
           notUploaded++
@@ -465,7 +467,7 @@ export function MevzuatTaraDataSource() {
                           <TableCell className="font-medium">{section.section_title}</TableCell>
                           <TableCell>{item.baslik}</TableCell>
                           <TableCell className="text-center">
-                            {item.mevzuatgpt === true || item.mevzuatgpt === "true" ? (
+                            {isTruthy(item.mevzuatgpt) ? (
                               <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto" />
                             ) : (
                               <Button
@@ -566,7 +568,7 @@ export function MevzuatTaraDataSource() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            {item.portal === true || item.portal === "true" ? (
+                            {isTruthy(item.portal) ? (
                               <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto" />
                             ) : (
                               <Button
@@ -667,7 +669,7 @@ export function MevzuatTaraDataSource() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            {(!(item.mevzuatgpt === true || item.mevzuatgpt === "true") || !(item.portal === true || item.portal === "true")) && (
+                            {(!isTruthy(item.mevzuatgpt) || !isTruthy(item.portal)) && (
                               <Button
                                 size="sm"
                                 variant="default"
