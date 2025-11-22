@@ -31,6 +31,8 @@ export function ProxySettings() {
   const [testResult, setTestResult] = useState<ProxyTestResponse | null>(null)
   const [testingProxyId, setTestingProxyId] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
+  const [testConfirmModalOpen, setTestConfirmModalOpen] = useState(false)
+  const [pendingTestProxyId, setPendingTestProxyId] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Proxy'leri yükle
@@ -153,8 +155,20 @@ export function ProxySettings() {
     }
   }
 
-  // Proxy test et
-  const handleTestProxy = async (id: string) => {
+  // Proxy test onayı için modal aç
+  const handleTestProxyClick = (id: string) => {
+    setPendingTestProxyId(id)
+    setTestConfirmModalOpen(true)
+  }
+
+  // Proxy test et (onaydan sonra)
+  const handleTestProxy = async () => {
+    if (!pendingTestProxyId) return
+    
+    setTestConfirmModalOpen(false)
+    const id = pendingTestProxyId
+    setPendingTestProxyId(null)
+    
     setTestingProxyId(id)
     setTesting(true)
     setTestResult(null)
@@ -264,7 +278,7 @@ export function ProxySettings() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleTestProxy(proxy.id)}
+                            onClick={() => handleTestProxyClick(proxy.id)}
                             disabled={testing && testingProxyId === proxy.id}
                             title="Proxy Test Et"
                           >
@@ -537,6 +551,35 @@ export function ProxySettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Test Confirmation Modal */}
+      <AlertDialog open={testConfirmModalOpen} onOpenChange={setTestConfirmModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Proxy Test Et</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bu proxy'yi test etmek istediğinizden emin misiniz?
+              <br />
+              <br />
+              <strong>
+                {pendingTestProxyId && proxies.find(p => p.id === pendingTestProxyId)?.host}:{pendingTestProxyId && proxies.find(p => p.id === pendingTestProxyId)?.port}
+              </strong>
+              <br />
+              <br />
+              Test işlemi KAYSİS'e bağlantı yaparak proxy'nin çalışıp çalışmadığını kontrol eder.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleTestProxy}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Test Et
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
