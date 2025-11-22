@@ -35,8 +35,11 @@ export interface CeleryHealth extends ComponentHealth {
 }
 
 export interface EmailHealth extends ComponentHealth {
-  api_response_time_ms?: number;
+  connection_time_ms?: number;
   provider?: string;
+  host?: string;
+  port?: number;
+  user?: string;
 }
 
 export interface AIServiceHealth {

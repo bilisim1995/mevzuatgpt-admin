@@ -474,24 +474,42 @@ export function SystemHealthPanel() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-blue-600/20 flex items-center justify-center">
                 <Mail className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email (SMTP)</h3>
             </div>
             {getComponentStatusBadge(healthData.components.email.status)}
           </div>
 
           {healthData.components.email.status === 'healthy' ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="p-2 bg-indigo-50/50 dark:bg-indigo-900/20 rounded-lg">
                   <p className="text-xs text-indigo-600 dark:text-indigo-400">Sağlayıcı</p>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {healthData.components.email.provider}
+                    {healthData.components.email.provider || 'SMTP'}
                   </p>
                 </div>
                 <div className="p-2 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg">
-                  <p className="text-xs text-blue-600 dark:text-blue-400">API Yanıt Süresi</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">Bağlantı Süresi</p>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {healthData.components.email.api_response_time_ms?.toFixed(1)}ms
+                    {healthData.components.email.connection_time_ms?.toFixed(1)}ms
+                  </p>
+                </div>
+                <div className="p-2 bg-green-50/50 dark:bg-green-900/20 rounded-lg">
+                  <p className="text-xs text-green-600 dark:text-green-400">Host</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {healthData.components.email.host || '-'}
+                  </p>
+                </div>
+                <div className="p-2 bg-purple-50/50 dark:bg-purple-900/20 rounded-lg">
+                  <p className="text-xs text-purple-600 dark:text-purple-400">Port</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {healthData.components.email.port || '-'}
+                  </p>
+                </div>
+                <div className="p-2 bg-orange-50/50 dark:bg-orange-900/20 rounded-lg col-span-2">
+                  <p className="text-xs text-orange-600 dark:text-orange-400">Kullanıcı</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {healthData.components.email.user || '-'}
                   </p>
                 </div>
               </div>
@@ -499,7 +517,7 @@ export function SystemHealthPanel() {
           ) : (
             <div className="p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
               <p className="text-sm text-red-700 dark:text-red-300">
-                {healthData.components.email.error || 'Email servisi hatası'}
+                {healthData.components.email.error || 'SMTP servisi hatası'}
               </p>
             </div>
           )}
