@@ -1449,6 +1449,56 @@ export interface HealthResponse {
   service: string;
 }
 
+export interface DetailedHealthResponse {
+  status: string;
+  service: string;
+  timestamp: string;
+  checks: {
+    mongodb?: {
+      status: string;
+      message: string;
+    };
+    systemd_service?: {
+      status: string;
+      message: string;
+      service_name: string;
+    };
+    curl_cffi?: {
+      status: string;
+      message: string;
+    };
+  };
+  system?: {
+    platform: string;
+    platform_release: string;
+    python_version: string;
+  };
+}
+
+export interface HealthLogsResponse {
+  success: boolean;
+  service_name: string;
+  lines_requested: number;
+  lines_returned: number;
+  timestamp: string;
+  logs: string[];
+  raw_logs: string;
+}
+
+export interface HealthStatusResponse {
+  success: boolean;
+  service_name: string;
+  timestamp: string;
+  status_output: string;
+  details: {
+    ActiveState?: string;
+    SubState?: string;
+    LoadState?: string;
+    MainPID?: string;
+    ExecMainStartTimestamp?: string;
+  };
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   try {
     const response = await fetch(
@@ -1459,6 +1509,127 @@ export async function getHealth(): Promise<HealthResponse> {
     );
 
     if (!response.ok) {
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function getDetailedHealth(): Promise<DetailedHealthResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/health`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function getHealthLogs(lines: number = 100): Promise<HealthLogsResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/health/logs?lines=${lines}`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 500) {
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Sunucu hatası oluştu');
+        } catch {
+          throw new Error('Sunucu hatası oluştu');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function getHealthStatus(): Promise<HealthStatusResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/health/status`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 500) {
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Sunucu hatası oluştu');
+        } catch {
+          throw new Error('Sunucu hatası oluştu');
+        }
+      }
       throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
     }
 
@@ -1681,6 +1852,347 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
       throw new Error(`${errorMsg}\n\nDetaylar:\n${errorDetails}`);
     }
     
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+// Proxy CRUD Interfaces
+export interface Proxy {
+  id: string;
+  host: string;
+  port: string;
+  username?: string;
+  password?: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProxyListResponse {
+  success: boolean;
+  total: number;
+  data: Proxy[];
+}
+
+export interface ProxyResponse {
+  success: boolean;
+  data?: Proxy;
+  id?: string;
+  modified?: number;
+  deleted?: number;
+  message?: string;
+}
+
+export interface ProxyError {
+  detail: string;
+}
+
+// Proxy CRUD Functions
+export async function getProxies(limit: number = 100, offset: number = 0): Promise<ProxyListResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies?limit=${limit}&offset=${offset}`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 500) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Sunucu hatası oluştu');
+        } catch {
+          throw new Error('Sunucu hatası oluştu');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function getProxy(id: string): Promise<ProxyResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies/${id}`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400 || response.status === 404) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function createProxy(data: {
+  host: string;
+  port: string;
+  username?: string;
+  password?: string;
+  is_active?: boolean;
+}): Promise<ProxyResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies`,
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function updateProxy(id: string, data: {
+  host?: string;
+  port?: string;
+  username?: string;
+  password?: string;
+  is_active?: boolean;
+}): Promise<ProxyResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies/${id}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400 || response.status === 404) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export async function deleteProxy(id: string): Promise<ProxyResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies/${id}`,
+      {
+        method: 'DELETE',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400 || response.status === 404) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export interface ProxyTestRequest {
+  id: string;
+  detsis?: string;
+}
+
+export interface ProxyTestResponse {
+  success: boolean;
+  proxy_id: string;
+  proxy_host: string;
+  proxy_port: string;
+  test_url: string;
+  detsis: string;
+  ip_info: {
+    ip: string;
+    country: string;
+    country_code: string;
+    city: string;
+    is_turkey: boolean;
+  };
+  connection_status: string;
+  http_status?: number;
+  response_size?: number;
+  content_check?: string;
+  error?: string | null;
+  curl_cffi_available: boolean;
+}
+
+export async function testProxy(data: ProxyTestRequest): Promise<ProxyTestResponse> {
+  try {
+    const headers = getAuthHeaders();
+    
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/proxies/test`,
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      if (response.status === 400 || response.status === 404) {
+        try {
+          const errorData: ProxyError = await response.json();
+          throw new Error(errorData.detail || 'Geçersiz istek');
+        } catch {
+          throw new Error('Geçersiz istek');
+        }
+      }
+      throw new Error(`API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
     return result;
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {

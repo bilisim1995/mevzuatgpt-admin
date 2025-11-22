@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { Activity, Database, Server, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, Users, HardDrive, AlertCircle, Zap, Mail, Bot, Cloud, BarChart3, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { getSystemHealth } from "@/lib/system-health"
+import { getDetailedHealth, DetailedHealthResponse } from "@/lib/scrapper"
 import { SystemHealthData } from "@/types/system-health"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -15,6 +16,9 @@ export function SystemHealthPanel() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [elasticsearchModalOpen, setElasticsearchModalOpen] = useState(false)
+  const [scrapperHealthModalOpen, setScrapperHealthModalOpen] = useState(false)
+  const [scrapperHealthData, setScrapperHealthData] = useState<DetailedHealthResponse | null>(null)
+  const [scrapperHealthLoading, setScrapperHealthLoading] = useState(false)
 
   useEffect(() => {
     loadSystemHealth()
@@ -40,6 +44,21 @@ export function SystemHealthPanel() {
     await loadSystemHealth()
     setRefreshing(false)
     toast.success('Sistem sağlığı güncellendi')
+  }
+
+  const loadScrapperHealth = async () => {
+    setScrapperHealthLoading(true)
+    try {
+      const data = await getDetailedHealth()
+      setScrapperHealthData(data)
+      setScrapperHealthModalOpen(true)
+    } catch (error) {
+      toast.error('Scrapper sağlık durumu yüklenirken hata oluştu', {
+        description: error instanceof Error ? error.message : 'Bilinmeyen hata'
+      })
+    } finally {
+      setScrapperHealthLoading(false)
+    }
   }
 
   const getOverallHealthBadge = (status: string) => {
@@ -180,6 +199,16 @@ export function SystemHealthPanel() {
           </div>
           <div className="flex items-center gap-4">
             {getOverallHealthBadge(healthData.overall_status)}
+            <Button
+              onClick={loadScrapperHealth}
+              disabled={scrapperHealthLoading}
+              variant="outline"
+              className="h-10 px-4 bg-white/50 dark:bg-black/30 backdrop-blur-sm border-gray-300/30 dark:border-gray-700/30 rounded-xl hover:bg-white/70 dark:hover:bg-black/50 transition-all duration-300"
+              title="Scrapper Sağlık Durumu"
+            >
+              <Server className="w-4 h-4 mr-2" />
+              Scrapper Durumu
+            </Button>
             <Button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -767,6 +796,127 @@ export function SystemHealthPanel() {
         )}
       </DialogContent>
       </Dialog>
+
+      {/* Scrapper Health Modal */}
+      <Dialog open={scrapperHealthModalOpen} onOpenChange={setScrapperHealthModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Server className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              Scrapper Detaylı Sağlık Durumu
+            </DialogTitle>
+            <DialogDescription>
+              Scrapper servisinin detaylı sağlık kontrolü ve sistem bilgileri
+            </DialogDescription>
+          </DialogHeader>
+          {scrapperHealthLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+            </div>
+          ) : scrapperHealthData ? (
+            <div className="space-y-4 py-4">
+              {/* Genel Durum */}
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                <h4 className="font-semibold mb-3 text-gray-900 dark:text-white">Genel Durum</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Durum:</span>
+                    <Badge variant={scrapperHealthData.status === "healthy" ? "default" : "destructive"} className="ml-2">
+                      {scrapperHealthData.status === "healthy" ? "Sağlıklı" : scrapperHealthData.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Servis:</span>
+                    <span className="ml-2 font-medium text-gray-900 dark:text-white">{scrapperHealthData.service}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Zaman:</span>
+                    <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                      {new Date(scrapperHealthData.timestamp).toLocaleString("tr-TR")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kontroller */}
+              {scrapperHealthData.checks && (
+                <div className="space-y-3">
+                  {scrapperHealthData.checks.mongodb && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white flex items-center gap-2">
+                        <Database className="w-4 h-4" />
+                        MongoDB
+                      </h4>
+                      <div className="space-y-1">
+                        <Badge variant={scrapperHealthData.checks.mongodb.status === "healthy" ? "default" : "destructive"}>
+                          {scrapperHealthData.checks.mongodb.status === "healthy" ? "Sağlıklı" : scrapperHealthData.checks.mongodb.status}
+                        </Badge>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{scrapperHealthData.checks.mongodb.message}</p>
+                      </div>
+                    </div>
+                  )}
+                  {scrapperHealthData.checks.systemd_service && (
+                    <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+                      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white flex items-center gap-2">
+                        <Server className="w-4 h-4" />
+                        Systemd Servis
+                      </h4>
+                      <div className="space-y-1">
+                        <Badge variant={scrapperHealthData.checks.systemd_service.status === "healthy" ? "default" : "destructive"}>
+                          {scrapperHealthData.checks.systemd_service.status === "healthy" ? "Sağlıklı" : scrapperHealthData.checks.systemd_service.status}
+                        </Badge>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{scrapperHealthData.checks.systemd_service.message}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Servis Adı: {scrapperHealthData.checks.systemd_service.service_name}</p>
+                      </div>
+                    </div>
+                  )}
+                  {scrapperHealthData.checks.curl_cffi && (
+                    <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+                      <h4 className="font-semibold mb-2 text-gray-900 dark:text-white flex items-center gap-2">
+                        <Zap className="w-4 h-4" />
+                        curl_cffi
+                      </h4>
+                      <div className="space-y-1">
+                        <Badge variant={scrapperHealthData.checks.curl_cffi.status === "available" ? "default" : "secondary"}>
+                          {scrapperHealthData.checks.curl_cffi.status === "available" ? "Mevcut" : scrapperHealthData.checks.curl_cffi.status}
+                        </Badge>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{scrapperHealthData.checks.curl_cffi.message}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sistem Bilgileri */}
+              {scrapperHealthData.system && (
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                  <h4 className="font-semibold mb-3 text-gray-900 dark:text-white">Sistem Bilgileri</h4>
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Platform:</span>
+                      <span className="ml-2 font-medium text-gray-900 dark:text-white">{scrapperHealthData.system.platform}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Sürüm:</span>
+                      <span className="ml-2 font-medium text-gray-900 dark:text-white">{scrapperHealthData.system.platform_release}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Python:</span>
+                      <span className="ml-2 font-medium text-gray-900 dark:text-white">{scrapperHealthData.system.python_version}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScrapperHealthModalOpen(false)}>
+              Kapat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </>
   )
 }

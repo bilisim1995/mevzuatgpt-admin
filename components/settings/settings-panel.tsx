@@ -1,6 +1,6 @@
 "use client"
 
-import { Settings, Database, CreditCard } from "lucide-react"
+import { Settings, Database, CreditCard, Network } from "lucide-react"
 import { Bot } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RedisManagement } from "./redis-management"
@@ -8,6 +8,7 @@ import { ElasticsearchManagement } from "./elasticsearch-management"
 import { PromptList } from "@/components/prompts/prompt-list"
 import { GroqSettingsPanel } from "./groq-settings"
 import { PaymentSettingsPanel } from "./payment-settings"
+import { ProxySettings } from "./proxy-settings"
 
 export function SettingsPanel() {
   return (
@@ -26,7 +27,7 @@ export function SettingsPanel() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="redis" className="w-full">
-          <TabsList className="grid w-full grid-cols-1 md:grid-cols-5 mb-8 bg-white/10 dark:bg-black/20 backdrop-blur-xl border border-gray-200/20 dark:border-gray-800/30 rounded-2xl p-1">
+          <TabsList className="grid w-full grid-cols-1 md:grid-cols-6 mb-8 bg-white/10 dark:bg-black/20 backdrop-blur-xl border border-gray-200/20 dark:border-gray-800/30 rounded-2xl p-1">
             <TabsTrigger 
               value="redis" 
               className="rounded-xl data-[state=active]:bg-white/20 dark:data-[state=active]:bg-black/30 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white transition-all duration-200"
@@ -62,6 +63,13 @@ export function SettingsPanel() {
               <CreditCard className="w-4 h-4 mr-2" />
               Ödeme Ayarları
             </TabsTrigger>
+            <TabsTrigger 
+              value="proxy-settings" 
+              className="rounded-xl data-[state=active]:bg-white/20 dark:data-[state=active]:bg-black/30 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white transition-all duration-200"
+            >
+              <Network className="w-4 h-4 mr-2" />
+              Proxy
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="redis">
@@ -82,6 +90,10 @@ export function SettingsPanel() {
 
           <TabsContent value="payment-settings">
             <PaymentSettingsPanel />
+          </TabsContent>
+
+          <TabsContent value="proxy-settings">
+            <ProxySettings />
           </TabsContent>
         </Tabs>
       </div>
