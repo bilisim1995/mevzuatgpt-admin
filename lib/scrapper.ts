@@ -1750,6 +1750,7 @@ export interface ProcessDocumentRequest {
   document_name?: string;
   detsis?: string;
   type?: string;
+  use_ocr?: boolean | null;
 }
 
 export interface ProcessDocumentResponse {

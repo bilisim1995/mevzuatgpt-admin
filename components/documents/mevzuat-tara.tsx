@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { getMevzuatGPTScan, getKurumlar, processDocument, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search } from "lucide-react"
@@ -27,6 +28,7 @@ export function MevzuatTaraDataSource() {
   const [mevzuatGPTDocuments, setMevzuatGPTDocuments] = useState<Set<string>>(new Set())
   const [portalDocuments, setPortalDocuments] = useState<Set<string>>(new Set())
   const [errorModal, setErrorModal] = useState<{ open: boolean; message: string }>({ open: false, message: "" })
+  const [ocrEnabled, setOcrEnabled] = useState<Record<string, boolean>>({})
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -455,6 +457,7 @@ export function MevzuatTaraDataSource() {
                       <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">Portal</TableHead>
                       <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">İşlemler</TableHead>
                       <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">Link</TableHead>
+                      <TableHead className="w-[100px] text-center bg-white dark:bg-gray-900">OCR</TableHead>
                     </TableRow>
                   </TableHeader>
                 </Table>
@@ -501,6 +504,7 @@ export function MevzuatTaraDataSource() {
                                       document_name: item.baslik,
                                       detsis: detsis,
                                       type: queryType,
+                                      use_ocr: ocrEnabled[item.id] || undefined,
                                     })
                                     
                                     // Local state'i güncelle - MevzuatGPT durumunu true yap
@@ -602,6 +606,7 @@ export function MevzuatTaraDataSource() {
                                       document_name: item.baslik,
                                       detsis: detsis,
                                       type: queryType,
+                                      use_ocr: ocrEnabled[item.id] || undefined,
                                     })
                                     
                                     // Local state'i güncelle - Portal durumunu true yap
@@ -701,6 +706,7 @@ export function MevzuatTaraDataSource() {
                                       document_name: item.baslik,
                                       detsis: detsis,
                                       type: queryType,
+                                      use_ocr: ocrEnabled[item.id] || undefined,
                                     })
                                     
                                     // Local state'i güncelle - Her iki durumu da true yap
@@ -777,6 +783,17 @@ export function MevzuatTaraDataSource() {
                               <ExternalLink className="h-4 w-4" />
                               Görüntüle
                             </a>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={ocrEnabled[item.id] || false}
+                              onCheckedChange={(checked) => {
+                                setOcrEnabled(prev => ({
+                                  ...prev,
+                                  [item.id]: checked === true
+                                }))
+                              }}
+                            />
                           </TableCell>
                         </TableRow>
                       ))
