@@ -7,10 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { getMevzuatGPTScan, getKurumlar, processDocument, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
-import { Loader2, ExternalLink, CheckCircle2, XCircle, Search } from "lucide-react"
+import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
 
 type StatusFilter = "all" | "uploaded" | "not-uploaded"
 
@@ -29,6 +32,7 @@ export function MevzuatTaraDataSource() {
   const [portalDocuments, setPortalDocuments] = useState<Set<string>>(new Set())
   const [errorModal, setErrorModal] = useState<{ open: boolean; message: string }>({ open: false, message: "" })
   const [ocrEnabled, setOcrEnabled] = useState<Record<string, boolean>>({})
+  const [kurumPopoverOpen, setKurumPopoverOpen] = useState(false)
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -253,28 +257,60 @@ export function MevzuatTaraDataSource() {
               <label htmlFor="institution-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Taranacak Kurum Seç:
               </label>
-              <Select 
-                value={selectedInstitution} 
-                onValueChange={setSelectedInstitution}
-                disabled={loadingKurumlar}
-              >
-                <SelectTrigger id="institution-select" className="w-[300px] min-w-[300px]">
-                  <SelectValue placeholder={loadingKurumlar ? "Yükleniyor..." : "Kurum seçin"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {loadingKurumlar ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    </div>
-                  ) : (
-                    kurumlar.map((kurum) => (
-                      <SelectItem key={kurum._id} value={kurum._id}>
-                        {kurum.kurum_adi}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              <Popover open={kurumPopoverOpen} onOpenChange={setKurumPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={kurumPopoverOpen}
+                    className="w-[300px] min-w-[300px] justify-between"
+                    disabled={loadingKurumlar}
+                  >
+                    {loadingKurumlar
+                      ? "Yükleniyor..."
+                      : selectedInstitution
+                      ? kurumlar.find((kurum) => kurum._id === selectedInstitution)?.kurum_adi || "Kurum seçin"
+                      : "Kurum seçin"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Kurum ara..." />
+                    <CommandList>
+                      {loadingKurumlar ? (
+                        <div className="flex items-center justify-center p-4">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        </div>
+                      ) : (
+                        <>
+                          <CommandEmpty>Kurum bulunamadı.</CommandEmpty>
+                          <CommandGroup>
+                            {[...kurumlar].reverse().map((kurum) => (
+                              <CommandItem
+                                key={kurum._id}
+                                value={kurum.kurum_adi}
+                                onSelect={() => {
+                                  setSelectedInstitution(kurum._id)
+                                  setKurumPopoverOpen(false)
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedInstitution === kurum._id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {kurum.kurum_adi}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="flex items-center gap-2">
               <label htmlFor="query-type-select" className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -477,7 +513,7 @@ export function MevzuatTaraDataSource() {
                                 size="sm"
                                 variant="outline"
                                 className="text-xs"
-                                disabled={loadingItems[`${item.id}-m`]}
+                                disabled={loadingItems[`${item.id}-m`] || loadingItems[`${item.id}-t`]}
                                 onClick={async () => {
                                   if (!selectedInstitution) {
                                     toast({
@@ -579,7 +615,7 @@ export function MevzuatTaraDataSource() {
                                 size="sm"
                                 variant="outline"
                                 className="text-xs"
-                                disabled={loadingItems[`${item.id}-p`]}
+                                disabled={loadingItems[`${item.id}-p`] || loadingItems[`${item.id}-t`]}
                                 onClick={async () => {
                                   if (!selectedInstitution) {
                                     toast({

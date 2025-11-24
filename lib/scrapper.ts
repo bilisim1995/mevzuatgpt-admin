@@ -62,6 +62,27 @@ function getAuthHeaders() {
   };
 }
 
+// Timeout ile fetch wrapper (20 dakika = 1200000 ms)
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 1200000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('İstek zaman aşımına uğradı. İşlem çok uzun sürdü.');
+    }
+    throw error;
+  }
+}
+
 export async function getPortalScan(kurumId: string, detsis?: string, type?: string): Promise<PortalScanResponse> {
   try {
     const headers = getAuthHeaders();
@@ -78,13 +99,14 @@ export async function getPortalScan(kurumId: string, detsis?: string, type?: str
       requestBody.type = type;
     }
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/portal-scan`,
       {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(requestBody),
-      }
+      },
+      1200000 // 20 dakika timeout
     );
 
     if (!response.ok) {
@@ -235,7 +257,7 @@ export async function scrapeEdevlet(kurumId: string, url: string): Promise<Edevl
   try {
     const headers = getAuthHeaders();
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/mongo/edevlet/scrape`,
       {
         method: 'POST',
@@ -244,7 +266,8 @@ export async function scrapeEdevlet(kurumId: string, url: string): Promise<Edevl
           kurum_id: kurumId,
           url: url
         }),
-      }
+      },
+      1200000 // 20 dakika timeout
     );
 
     if (!response.ok) {
@@ -1699,13 +1722,14 @@ export async function getMevzuatGPTScan(kurumId: string, detsis?: string, type?:
       requestBody.type = type;
     }
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/mevzuatgpt/scrape`,
       {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(requestBody),
-      }
+      },
+      1200000 // 20 dakika timeout
     );
 
     if (!response.ok) {
@@ -1774,7 +1798,7 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
   try {
     const headers = getAuthHeaders();
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process`,
       {
         method: 'POST',
@@ -1783,7 +1807,8 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
-      }
+      },
+      1200000 // 20 dakika timeout
     );
 
     // Önce response body'yi text olarak al (hem hata hem başarı durumunda kullanabilmek için)
