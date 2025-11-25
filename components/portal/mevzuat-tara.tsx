@@ -120,18 +120,20 @@ export function MevzuatTara() {
                     variant="outline"
                     role="combobox"
                     aria-expanded={kurumPopoverOpen}
-                    className="w-[300px] min-w-[300px] justify-between"
+                    className="w-[450px] min-w-[450px] justify-between"
                 disabled={loadingKurumlar}
               >
-                    {loadingKurumlar
-                      ? "Yükleniyor..."
-                      : selectedInstitution
-                      ? kurumlar.find((kurum) => kurum._id === selectedInstitution)?.kurum_adi || "Kurum seçin"
-                      : "Kurum seçin"}
+                    <span className="truncate text-left flex-1">
+                      {loadingKurumlar
+                        ? "Yükleniyor..."
+                        : selectedInstitution
+                        ? kurumlar.find((kurum) => kurum._id === selectedInstitution)?.kurum_adi || "Kurum seçin"
+                        : "Kurum seçin"}
+                    </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0">
+                <PopoverContent className="w-[450px] p-0">
                   <Command>
                     <CommandInput placeholder="Kurum ara..." />
                     <CommandList>
@@ -154,16 +156,16 @@ export function MevzuatTara() {
                               >
                                 <Check
                                   className={cn(
-                                    "mr-2 h-4 w-4",
+                                    "mr-2 h-4 w-4 shrink-0",
                                     selectedInstitution === kurum._id ? "opacity-100" : "opacity-0"
                                   )}
                                 />
-                        {kurum.kurum_adi}
+                                <span className="truncate">{kurum.kurum_adi}</span>
                               </CommandItem>
                             ))}
                           </CommandGroup>
                         </>
-                      )}
+                  )}
                     </CommandList>
                   </Command>
                 </PopoverContent>

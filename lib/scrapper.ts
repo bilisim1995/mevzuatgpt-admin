@@ -62,8 +62,9 @@ function getAuthHeaders() {
   };
 }
 
-// Timeout ile fetch wrapper (20 dakika = 1200000 ms)
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 1200000): Promise<Response> {
+// Timeout ile fetch wrapper (60 dakika = 3600000 ms - varsayılan)
+// Büyük PDF'ler ve uzun işlemler için yeterli süre sağlar
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 3600000): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
@@ -77,7 +78,8 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('İstek zaman aşımına uğradı. İşlem çok uzun sürdü.');
+      const timeoutMinutes = Math.round(timeoutMs / 60000);
+      throw new Error(`İstek zaman aşımına uğradı (${timeoutMinutes} dakika). PDF işleme işlemi çok uzun sürdü. Lütfen daha küçük dosyalar deneyin veya işlemi tekrar başlatın.`);
     }
     throw error;
   }
@@ -106,7 +108,7 @@ export async function getPortalScan(kurumId: string, detsis?: string, type?: str
         headers: headers,
         body: JSON.stringify(requestBody),
       },
-      1200000 // 20 dakika timeout
+      3600000 // 60 dakika timeout - büyük PDF'ler için yeterli süre
     );
 
     if (!response.ok) {
@@ -267,7 +269,7 @@ export async function scrapeEdevlet(kurumId: string, url: string): Promise<Edevl
           url: url
         }),
       },
-      1200000 // 20 dakika timeout
+      3600000 // 60 dakika timeout - büyük PDF'ler için yeterli süre
     );
 
     if (!response.ok) {
@@ -1729,7 +1731,7 @@ export async function getMevzuatGPTScan(kurumId: string, detsis?: string, type?:
         headers: headers,
         body: JSON.stringify(requestBody),
       },
-      1200000 // 20 dakika timeout
+      3600000 // 60 dakika timeout - büyük PDF'ler için yeterli süre
     );
 
     if (!response.ok) {
@@ -1808,7 +1810,7 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
         },
         body: JSON.stringify(data),
       },
-      1200000 // 20 dakika timeout
+      3600000 // 60 dakika timeout - büyük PDF'ler için yeterli süre
     );
 
     // Önce response body'yi text olarak al (hem hata hem başarı durumunda kullanabilmek için)
@@ -1882,6 +1884,13 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    // Zaman aşımı hatalarını daha açıklayıcı hale getir
+    if (error instanceof Error) {
+      const errorMsg = error.message.toLowerCase();
+      if (errorMsg.includes('zaman aşımı') || errorMsg.includes('timeout') || errorMsg.includes('abort')) {
+        throw new Error('PDF işleme işlemi zaman aşımına uğradı. Büyük PDF dosyaları için işlem uzun sürebilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın.');
+      }
     }
     throw error;
   }

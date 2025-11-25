@@ -263,26 +263,28 @@ export function MevzuatTaraDataSource() {
                     variant="outline"
                     role="combobox"
                     aria-expanded={kurumPopoverOpen}
-                    className="w-[300px] min-w-[300px] justify-between"
-                    disabled={loadingKurumlar}
-                  >
-                    {loadingKurumlar
-                      ? "Yükleniyor..."
-                      : selectedInstitution
-                      ? kurumlar.find((kurum) => kurum._id === selectedInstitution)?.kurum_adi || "Kurum seçin"
-                      : "Kurum seçin"}
+                    className="w-[450px] min-w-[450px] justify-between"
+                disabled={loadingKurumlar}
+              >
+                    <span className="truncate text-left flex-1">
+                      {loadingKurumlar
+                        ? "Yükleniyor..."
+                        : selectedInstitution
+                        ? kurumlar.find((kurum) => kurum._id === selectedInstitution)?.kurum_adi || "Kurum seçin"
+                        : "Kurum seçin"}
+                    </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0">
+                <PopoverContent className="w-[450px] p-0">
                   <Command>
                     <CommandInput placeholder="Kurum ara..." />
                     <CommandList>
-                      {loadingKurumlar ? (
-                        <div className="flex items-center justify-center p-4">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        </div>
-                      ) : (
+                  {loadingKurumlar ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  ) : (
                         <>
                           <CommandEmpty>Kurum bulunamadı.</CommandEmpty>
                           <CommandGroup>
@@ -297,16 +299,16 @@ export function MevzuatTaraDataSource() {
                               >
                                 <Check
                                   className={cn(
-                                    "mr-2 h-4 w-4",
+                                    "mr-2 h-4 w-4 shrink-0",
                                     selectedInstitution === kurum._id ? "opacity-100" : "opacity-0"
                                   )}
                                 />
-                                {kurum.kurum_adi}
+                                <span className="truncate">{kurum.kurum_adi}</span>
                               </CommandItem>
                             ))}
                           </CommandGroup>
                         </>
-                      )}
+                  )}
                     </CommandList>
                   </Command>
                 </PopoverContent>
@@ -584,12 +586,19 @@ export function MevzuatTaraDataSource() {
                                       description: "MevzuatGPT'ye yükleme işlemi tamamlandı",
                                     })
                                   } catch (err) {
-                                    const errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    
+                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
+                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    }
+                                    
                                     setErrorModal({ open: true, message: errorMessage })
                                     toast({
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
+                                      duration: 10000, // 10 saniye göster
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
@@ -686,12 +695,19 @@ export function MevzuatTaraDataSource() {
                                       description: "Portal'a yükleme işlemi tamamlandı",
                                     })
                                   } catch (err) {
-                                    const errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    
+                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
+                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    }
+                                    
                                     setErrorModal({ open: true, message: errorMessage })
                                     toast({
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
+                                      duration: 10000, // 10 saniye göster
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
@@ -786,12 +802,19 @@ export function MevzuatTaraDataSource() {
                                       description: "Her iki platforma yükleme işlemi tamamlandı",
                                     })
                                   } catch (err) {
-                                    const errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    
+                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
+                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    }
+                                    
                                     setErrorModal({ open: true, message: errorMessage })
                                     toast({
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
+                                      duration: 10000, // 10 saniye göster
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
