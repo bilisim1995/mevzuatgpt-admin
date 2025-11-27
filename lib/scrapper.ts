@@ -1800,6 +1800,8 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
   try {
     const headers = getAuthHeaders();
     
+    // Portal yükleme için daha uzun timeout (120 dakika = 7200000 ms)
+    // Büyük PDF'ler ve uzun işlemler için yeterli süre
     const response = await fetchWithTimeout(
       `${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process`,
       {
@@ -1810,10 +1812,11 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
         },
         body: JSON.stringify(data),
       },
-      3600000 // 60 dakika timeout - büyük PDF'ler için yeterli süre
+      7200000 // 120 dakika timeout - portal yükleme için yeterli süre
     );
 
     // Önce response body'yi text olarak al (hem hata hem başarı durumunda kullanabilmek için)
+    // Response body okuma işlemi de uzun sürebilir, bu yüzden timeout içinde tutuyoruz
     const responseText = await response.text();
     
     if (!response.ok) {
@@ -1882,16 +1885,25 @@ export async function processDocument(data: ProcessDocumentRequest): Promise<Pro
     
     return result;
   } catch (error) {
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
-    }
-    // Zaman aşımı hatalarını daha açıklayıcı hale getir
-    if (error instanceof Error) {
+    // Network hatalarını ve timeout hatalarını daha iyi yakala
+    if (error instanceof TypeError) {
       const errorMsg = error.message.toLowerCase();
-      if (errorMsg.includes('zaman aşımı') || errorMsg.includes('timeout') || errorMsg.includes('abort')) {
-        throw new Error('PDF işleme işlemi zaman aşımına uğradı. Büyük PDF dosyaları için işlem uzun sürebilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın.');
+      // Fetch hataları (network timeout, connection refused, vb.)
+      if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('failed')) {
+        throw new Error('Scrapper API sunucusuna bağlanılamıyor veya bağlantı zaman aşımına uğradı. Portal yükleme işlemi uzun sürebilir, lütfen bekleyin ve tekrar deneyin.');
       }
     }
+    
+    // AbortError ve timeout hatalarını yakala
+    if (error instanceof Error) {
+      const errorMsg = error.message.toLowerCase();
+      const errorName = error.name?.toLowerCase() || '';
+      
+      if (errorName === 'aborterror' || errorMsg.includes('zaman aşımı') || errorMsg.includes('timeout') || errorMsg.includes('abort')) {
+        throw new Error('PDF işleme işlemi zaman aşımına uğradı. Büyük PDF dosyaları için işlem uzun sürebilir (2 saate kadar). Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın.');
+      }
+    }
+    
     throw error;
   }
 }

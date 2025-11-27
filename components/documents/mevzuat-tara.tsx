@@ -588,9 +588,12 @@ export function MevzuatTaraDataSource() {
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
                                     
-                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
-                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
-                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
+                                    const errorLower = errorMessage.toLowerCase()
+                                    if (errorLower.includes("bağlanılamıyor") || errorLower.includes("bağlantı") || errorLower.includes("connection")) {
+                                      errorMessage = "Yükleme işlemi uzun sürebilir. Bağlantı hatası alındı ancak işlem arka planda devam ediyor olabilir. Lütfen birkaç dakika bekleyip tekrar deneyin."
+                                    } else if (errorLower.includes("zaman aşımı") || errorLower.includes("timeout") || errorLower.includes("zamanaşımı")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. İşlem 2 saate kadar sürebilir. Lütfen işlemi tekrar deneyin."
                                     }
                                     
                                     setErrorModal({ open: true, message: errorMessage })
@@ -598,7 +601,7 @@ export function MevzuatTaraDataSource() {
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
-                                      duration: 10000, // 10 saniye göster
+                                      duration: 15000, // 15 saniye göster - daha uzun mesajlar için
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
@@ -697,9 +700,12 @@ export function MevzuatTaraDataSource() {
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
                                     
-                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
-                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
-                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
+                                    const errorLower = errorMessage.toLowerCase()
+                                    if (errorLower.includes("bağlanılamıyor") || errorLower.includes("bağlantı") || errorLower.includes("connection")) {
+                                      errorMessage = "Portal yükleme işlemi uzun sürebilir. Bağlantı hatası alındı ancak işlem arka planda devam ediyor olabilir. Lütfen birkaç dakika bekleyip tekrar deneyin."
+                                    } else if (errorLower.includes("zaman aşımı") || errorLower.includes("timeout") || errorLower.includes("zamanaşımı")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Portal yükleme işlemi 2 saate kadar sürebilir. Lütfen işlemi tekrar deneyin."
                                     }
                                     
                                     setErrorModal({ open: true, message: errorMessage })
@@ -707,7 +713,7 @@ export function MevzuatTaraDataSource() {
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
-                                      duration: 10000, // 10 saniye göster
+                                      duration: 15000, // 15 saniye göster - daha uzun mesajlar için
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
@@ -804,9 +810,12 @@ export function MevzuatTaraDataSource() {
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
                                     
-                                    // Zaman aşımı hatalarını daha açıklayıcı hale getir
-                                    if (errorMessage.includes("zaman aşımı") || errorMessage.includes("timeout") || errorMessage.includes("ZAMAN AŞIMI")) {
-                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Lütfen işlemi tekrar deneyin veya daha küçük dosyalar için deneme yapın."
+                                    // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
+                                    const errorLower = errorMessage.toLowerCase()
+                                    if (errorLower.includes("bağlanılamıyor") || errorLower.includes("bağlantı") || errorLower.includes("connection")) {
+                                      errorMessage = "Yükleme işlemi uzun sürebilir. Bağlantı hatası alındı ancak işlem arka planda devam ediyor olabilir. Lütfen birkaç dakika bekleyip tekrar deneyin."
+                                    } else if (errorLower.includes("zaman aşımı") || errorLower.includes("timeout") || errorLower.includes("zamanaşımı")) {
+                                      errorMessage = "PDF işleme işlemi zaman aşımına uğradı. Bu durum büyük PDF dosyalarında normal olabilir. Portal yükleme işlemi 2 saate kadar sürebilir. Lütfen işlemi tekrar deneyin."
                                     }
                                     
                                     setErrorModal({ open: true, message: errorMessage })
@@ -814,7 +823,7 @@ export function MevzuatTaraDataSource() {
                                       title: "Hata",
                                       description: errorMessage,
                                       variant: "destructive",
-                                      duration: 10000, // 10 saniye göster
+                                      duration: 15000, // 15 saniye göster - daha uzun mesajlar için
                                     })
                                   } finally {
                                     setLoadingItems(prev => ({ ...prev, [loadingKey]: false }))
