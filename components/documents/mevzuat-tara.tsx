@@ -33,6 +33,7 @@ export function MevzuatTaraDataSource() {
   const [errorModal, setErrorModal] = useState<{ open: boolean; message: string }>({ open: false, message: "" })
   const [ocrEnabled, setOcrEnabled] = useState<Record<string, boolean>>({})
   const [kurumPopoverOpen, setKurumPopoverOpen] = useState(false)
+  const [errorButtons, setErrorButtons] = useState<Set<string>>(new Set()) // Hata alan butonları takip et
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -513,8 +514,11 @@ export function MevzuatTaraDataSource() {
                             ) : (
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="text-xs"
+                                variant={errorButtons.has(`${item.id}-m`) ? "destructive" : "outline"}
+                                className={cn(
+                                  "text-xs",
+                                  errorButtons.has(`${item.id}-m`) && "bg-red-500 hover:bg-red-600 text-white"
+                                )}
                                 disabled={loadingItems[`${item.id}-m`] || loadingItems[`${item.id}-t`]}
                                 onClick={async () => {
                                   if (!selectedInstitution) {
@@ -528,6 +532,12 @@ export function MevzuatTaraDataSource() {
                                   
                                   const loadingKey = `${item.id}-m`
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
+                                  // Hata durumunu temizle (yeniden deneme için)
+                                  setErrorButtons(prev => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(loadingKey)
+                                    return newSet
+                                  })
                                   
                                   try {
                                     // Seçili kurumun detsis bilgisini al
@@ -588,6 +598,9 @@ export function MevzuatTaraDataSource() {
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
                                     
+                                    // Hata alan butonu işaretle
+                                    setErrorButtons(prev => new Set(prev).add(loadingKey))
+                                    
                                     // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
                                     const errorLower = errorMessage.toLowerCase()
                                     if (errorLower.includes("bağlanılamıyor") || errorLower.includes("bağlantı") || errorLower.includes("connection")) {
@@ -625,8 +638,11 @@ export function MevzuatTaraDataSource() {
                             ) : (
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="text-xs"
+                                variant={errorButtons.has(`${item.id}-p`) ? "destructive" : "outline"}
+                                className={cn(
+                                  "text-xs",
+                                  errorButtons.has(`${item.id}-p`) && "bg-red-500 hover:bg-red-600 text-white"
+                                )}
                                 disabled={loadingItems[`${item.id}-p`] || loadingItems[`${item.id}-t`]}
                                 onClick={async () => {
                                   if (!selectedInstitution) {
@@ -640,6 +656,12 @@ export function MevzuatTaraDataSource() {
                                   
                                   const loadingKey = `${item.id}-p`
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
+                                  // Hata durumunu temizle (yeniden deneme için)
+                                  setErrorButtons(prev => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(loadingKey)
+                                    return newSet
+                                  })
                                   
                                   try {
                                     // Seçili kurumun detsis bilgisini al
@@ -700,6 +722,9 @@ export function MevzuatTaraDataSource() {
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
                                     
+                                    // Hata alan butonu işaretle
+                                    setErrorButtons(prev => new Set(prev).add(loadingKey))
+                                    
                                     // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
                                     const errorLower = errorMessage.toLowerCase()
                                     if (errorLower.includes("bağlanılamıyor") || errorLower.includes("bağlantı") || errorLower.includes("connection")) {
@@ -735,8 +760,11 @@ export function MevzuatTaraDataSource() {
                             {(!isTruthy(item.mevzuatgpt) || !isTruthy(item.portal)) && (
                               <Button
                                 size="sm"
-                                variant="default"
-                                className="text-xs"
+                                variant={errorButtons.has(`${item.id}-t`) ? "destructive" : "default"}
+                                className={cn(
+                                  "text-xs",
+                                  errorButtons.has(`${item.id}-t`) && "bg-red-500 hover:bg-red-600 text-white"
+                                )}
                                 disabled={loadingItems[`${item.id}-t`]}
                                 onClick={async () => {
                                   if (!selectedInstitution) {
@@ -750,6 +778,12 @@ export function MevzuatTaraDataSource() {
                                   
                                   const loadingKey = `${item.id}-t`
                                   setLoadingItems(prev => ({ ...prev, [loadingKey]: true }))
+                                  // Hata durumunu temizle (yeniden deneme için)
+                                  setErrorButtons(prev => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(loadingKey)
+                                    return newSet
+                                  })
                                   
                                   try {
                                     // Seçili kurumun detsis bilgisini al
@@ -809,6 +843,9 @@ export function MevzuatTaraDataSource() {
                                     })
                                   } catch (err) {
                                     let errorMessage = err instanceof Error ? err.message : "Yükleme sırasında bir hata oluştu"
+                                    
+                                    // Hata alan butonu işaretle
+                                    setErrorButtons(prev => new Set(prev).add(loadingKey))
                                     
                                     // Bağlantı ve timeout hatalarını daha açıklayıcı hale getir
                                     const errorLower = errorMessage.toLowerCase()
