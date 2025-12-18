@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { bulkUploadDocuments, BulkUploadRequest } from "@/lib/bulk-upload"
+import { BulkUploadRequest, BulkUploadResponse } from "@/lib/bulk-upload"
+import { STORAGE_KEYS } from "@/constants/api"
 import { getInstitutions } from "@/lib/institutions"
 import { DocumentCategory } from "@/types/document"
 import { MESSAGES } from "@/constants/messages"
@@ -188,24 +189,119 @@ export function BulkUploadForm() {
 
     setIsUploading(true)
     setError('')
+    setSuccess('')
+
+    // Mevcut JWT token'ı al
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      setError("Oturum süresi dolmuş. Lütfen tekrar giriş yapın.")
+      setIsUploading(false)
+      return
+    }
 
     try {
       console.log('Form data before submit:', formData);
       console.log('Files:', files);
       
-      const request: BulkUploadRequest = {
-        files,
-        metadata: formData.metadata,
-        category: formData.category,
-        institution: formData.institution,
-        belge_adi: formData.belge_adi,
+      // FormData oluştur
+      const formDataToSend = new FormData();
+      
+      // Dosyaları ekle
+      files.forEach((file) => {
+        formDataToSend.append('files', file);
+      });
+      
+      // Required fields
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('institution', formData.institution);
+      formDataToSend.append('belge_adi', formData.belge_adi);
+      
+      // Metadata
+      if (formData.metadata) {
+        formDataToSend.append('metadata', formData.metadata);
+      } else {
+        // Default metadata
+        const defaultMetadata = {
+          pdf_sections: files.map(file => ({
+            output_filename: file.name,
+            title: file.name.replace('.pdf', ''),
+            description: `${formData.belge_adi} - ${file.name}`,
+            keywords: `${formData.category}, ${formData.institution}`
+          }))
+        };
+        formDataToSend.append('metadata', JSON.stringify(defaultMetadata));
       }
       
-      console.log('Request object:', request);
-      
-      const result = await bulkUploadDocuments(request)
-      setTaskId(result.data.batch_id)
-      setSuccess(`Toplu yükleme başlatıldı: ${result.data.total_files} dosya. PDF Yönetimi sayfasından ilerlemeyi takip edebilirsiniz.`)
+      // Streaming endpoint'e POST isteği at
+      const response = await fetch("/api/bulk-upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formDataToSend,
+      })
+
+      if (!response.body) {
+        throw new Error("Sunucudan geçerli bir stream yanıtı alınamadı.")
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder("utf-8")
+      let buffer = ""
+      let finalResult: BulkUploadResponse | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // SSE formatında event'leri satır satır işle
+        const events = buffer.split("\n\n")
+        buffer = events.pop() || ""
+
+        for (const rawEvent of events) {
+          const lines = rawEvent.split("\n")
+          const eventLine = lines.find((line) => line.startsWith("event: "))
+          const dataLine = lines.find((line) => line.startsWith("data: "))
+
+          const eventName = eventLine ? eventLine.replace("event: ", "").trim() : ""
+          const dataStr = dataLine ? dataLine.replace("data: ", "").trim() : ""
+
+          if (!eventName) continue
+
+          if (eventName === "result") {
+            try {
+              const parsed: BulkUploadResponse = JSON.parse(dataStr)
+              finalResult = parsed
+              setTaskId(parsed.data.batch_id)
+              setSuccess(`Toplu yükleme başlatıldı: ${parsed.data.total_files} dosya. PDF Yönetimi sayfasından ilerlemeyi takip edebilirsiniz.`)
+            } catch {
+              throw new Error("Sunucudan gelen veri işlenemedi.")
+            }
+          } else if (eventName === "error") {
+            let errorPayload: string
+            try {
+              errorPayload = JSON.parse(dataStr)
+            } catch {
+              errorPayload = dataStr
+            }
+
+            const errorMessage =
+              typeof errorPayload === "string"
+                ? errorPayload
+                : "Toplu yükleme sırasında bir hata oluştu."
+
+            throw new Error(errorMessage)
+          }
+        }
+      }
+
+      if (!finalResult) {
+        throw new Error("Sunucudan beklenen sonuç alınamadı.")
+      }
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Toplu yükleme sırasında hata oluştu')

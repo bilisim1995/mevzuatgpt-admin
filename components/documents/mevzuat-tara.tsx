@@ -9,11 +9,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { getMevzuatGPTScan, getKurumlar, processDocument, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum } from "@/lib/scrapper"
+import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { STORAGE_KEYS } from "@/constants/api"
 
 type StatusFilter = "all" | "uploaded" | "not-uploaded"
 
@@ -148,47 +149,160 @@ export function MevzuatTaraDataSource() {
     setLoading(true)
     setError(null)
     setData(null)
+
+    // Mevcut JWT token'ı al
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      setError(errorMessage)
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setLoading(false)
+      return
+    }
     
     try {
       // Önce mevcut belgeleri yükle ve sonuçları al
       const existingDocs = await loadExistingDocuments()
       
-      // Sonra tarama yap
-      const result = await getMevzuatGPTScan(selectedInstitution, detsis, queryType)
-      
-      // Başlıklara göre eşleştirme yap
-      if (result.data && result.data.sections) {
-        result.data.sections = result.data.sections.map(section => ({
-          ...section,
-          items: section.items.map(item => {
-            const originalTitle = item.baslik || ""
-            const normalizedTitle = normalizeTitle(originalTitle)
-            
-            // MevzuatGPT'de var mı kontrol et
-            const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
-            
-            // Portal'da var mı kontrol et
-            const isInPortal = existingDocs.portal.has(normalizedTitle)
-            
-            const updatedItem = {
-              ...item,
-              mevzuatgpt: isInMevzuatGPT || isTruthy(item.mevzuatgpt),
-              portal: isInPortal || isTruthy(item.portal)
-            }
-            
-            return updatedItem
-          })
-        }))
-      }
-      
-      setData(result)
-      toast({
-        title: "Başarılı",
-        description: result.message || "Tarama işlemi tamamlandı",
-        variant: "default",
+      // Streaming endpoint'e POST isteği at
+      const response = await fetch("/api/mevzuatgpt-scan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          kurumId: selectedInstitution,
+          detsis,
+          type: queryType,
+        }),
       })
+
+      if (!response.body) {
+        throw new Error("Sunucudan geçerli bir stream yanıtı alınamadı.")
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder("utf-8")
+      let buffer = ""
+      let finalResult: MevzuatGPTScanResponse | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // SSE formatında event'leri satır satır işle
+        const events = buffer.split("\n\n")
+        buffer = events.pop() || ""
+
+        for (const rawEvent of events) {
+          const lines = rawEvent.split("\n")
+          const eventLine = lines.find((line) => line.startsWith("event: "))
+          const dataLine = lines.find((line) => line.startsWith("data: "))
+
+          const eventName = eventLine ? eventLine.replace("event: ", "").trim() : ""
+          const dataStr = dataLine ? dataLine.replace("data: ", "").trim() : ""
+
+          if (!eventName) continue
+
+          if (eventName === "started") {
+            // İstersek burada "tarama başladı" mesajını gösterebiliriz
+          } else if (eventName === "keepalive") {
+            // Sadece bağlantıyı canlı tutmak için, UI'da göstermek zorunda değiliz
+          } else if (eventName === "result") {
+            try {
+              const parsed: MevzuatGPTScanResponse = JSON.parse(dataStr)
+              finalResult = parsed
+              
+              // Başlıklara göre eşleştirme yap
+              if (parsed.data && parsed.data.sections) {
+                parsed.data.sections = parsed.data.sections.map(section => ({
+                  ...section,
+                  items: section.items.map(item => {
+                    const originalTitle = item.baslik || ""
+                    const normalizedTitle = normalizeTitle(originalTitle)
+                    
+                    // MevzuatGPT'de var mı kontrol et
+                    const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
+                    
+                    // Portal'da var mı kontrol et
+                    const isInPortal = existingDocs.portal.has(normalizedTitle)
+                    
+                    const updatedItem = {
+                      ...item,
+                      mevzuatgpt: isInMevzuatGPT || isTruthy(item.mevzuatgpt),
+                      portal: isInPortal || isTruthy(item.portal)
+                    }
+                    
+                    return updatedItem
+                  })
+                }))
+              }
+              
+              setData(parsed)
+              setError(null)
+            } catch {
+              // Parse hatasında genel hata göster
+              const errorMessage = "Sunucudan gelen veri işlenemedi."
+              setError(errorMessage)
+              toast({
+                title: "Hata",
+                description: errorMessage,
+                variant: "destructive",
+              })
+            }
+          } else if (eventName === "error") {
+            let errorPayload: string
+            try {
+              errorPayload = JSON.parse(dataStr)
+            } catch {
+              errorPayload = dataStr
+            }
+
+            const errorMessage =
+              typeof errorPayload === "string"
+                ? errorPayload
+                : "Tarama sırasında bir hata oluştu."
+
+            setError(errorMessage)
+            toast({
+              title: "Hata",
+              description: errorMessage,
+              variant: "destructive",
+            })
+          } else if (eventName === "done") {
+            // İşlem tamamlandı
+            if (finalResult) {
+              toast({
+                title: "Başarılı",
+                description: finalResult.message || "Tarama işlemi tamamlandı",
+                variant: "default",
+              })
+            }
+          }
+        }
+      }
+
+      if (!finalResult) {
+        const errorMessage = "Sunucudan beklenen sonuç alınamadı."
+        setError(errorMessage)
+        toast({
+          title: "Hata",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Tarama sırasında bir hata oluştu"
+      const errorMessage =
+        err instanceof Error ? err.message : "Tarama sırasında bir hata oluştu"
       setError(errorMessage)
       toast({
         title: "Hata",
@@ -242,6 +356,94 @@ export function MevzuatTaraDataSource() {
   }
 
   const stats = calculateStats()
+
+  // Streaming processDocument helper fonksiyonu
+  const processDocumentStream = async (data: {
+    kurum_id: string;
+    link: string;
+    mode: "m" | "p" | "t";
+    category?: string;
+    document_name?: string;
+    detsis?: string;
+    type?: string;
+    use_ocr?: boolean | null;
+  }): Promise<ProcessDocumentResponse> => {
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      throw new Error("Oturum süresi dolmuş. Lütfen tekrar giriş yapın.")
+    }
+
+    const response = await fetch("/api/process-document", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.body) {
+      throw new Error("Sunucudan geçerli bir stream yanıtı alınamadı.")
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder("utf-8")
+    let buffer = ""
+    let finalResult: ProcessDocumentResponse | null = null
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // SSE formatında event'leri satır satır işle
+      const events = buffer.split("\n\n")
+      buffer = events.pop() || ""
+
+      for (const rawEvent of events) {
+        const lines = rawEvent.split("\n")
+        const eventLine = lines.find((line) => line.startsWith("event: "))
+        const dataLine = lines.find((line) => line.startsWith("data: "))
+
+        const eventName = eventLine ? eventLine.replace("event: ", "").trim() : ""
+        const dataStr = dataLine ? dataLine.replace("data: ", "").trim() : ""
+
+        if (!eventName) continue
+
+        if (eventName === "result") {
+          try {
+            const parsed: ProcessDocumentResponse = JSON.parse(dataStr)
+            finalResult = parsed
+          } catch {
+            throw new Error("Sunucudan gelen veri işlenemedi.")
+          }
+        } else if (eventName === "error") {
+          let errorPayload: string
+          try {
+            errorPayload = JSON.parse(dataStr)
+          } catch {
+            errorPayload = dataStr
+          }
+
+          const errorMessage =
+            typeof errorPayload === "string"
+              ? errorPayload
+              : "Belge işleme sırasında bir hata oluştu."
+
+          throw new Error(errorMessage)
+        }
+      }
+    }
+
+    if (!finalResult) {
+      throw new Error("Sunucudan beklenen sonuç alınamadı.")
+    }
+
+    return finalResult
+  }
 
   return (
     <div className="space-y-6">
@@ -544,7 +746,7 @@ export function MevzuatTaraDataSource() {
                                     const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
                                     const detsis = selectedKurum?.detsis || ""
                                     
-                                    await processDocument({
+                                    await processDocumentStream({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "m",
@@ -668,7 +870,7 @@ export function MevzuatTaraDataSource() {
                                     const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
                                     const detsis = selectedKurum?.detsis || ""
                                     
-                                    await processDocument({
+                                    await processDocumentStream({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "p",
@@ -790,7 +992,7 @@ export function MevzuatTaraDataSource() {
                                     const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
                                     const detsis = selectedKurum?.detsis || ""
                                     
-                                    await processDocument({
+                                    await processDocumentStream({
                                       kurum_id: selectedInstitution,
                                       link: item.link,
                                       mode: "t",
