@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { getPortalScan, getKurumlar, PortalScanResponse, PortalScanSection, SectionStats, Kurum } from "@/lib/scrapper"
+import { getKurumlar, PortalScanResponse, PortalScanSection, SectionStats, Kurum } from "@/lib/scrapper"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { STORAGE_KEYS } from "@/constants/api"
 
 type StatusFilter = "all" | "portal" | "not-portal"
 
@@ -25,6 +26,7 @@ export function MevzuatTara() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [kurumPopoverOpen, setKurumPopoverOpen] = useState(false)
   const { toast } = useToast()
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   // Kurumları yükle
   useEffect(() => {
@@ -68,29 +70,139 @@ export function MevzuatTara() {
     const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
     const detsis = selectedKurum?.detsis || ""
 
+    // Eski eventSource bağlantısını kapat
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
     setLoading(true)
     setError(null)
-    try {
-      const result = await getPortalScan(selectedInstitution, detsis, queryType)
-      setData(result)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Veri çekilirken bir hata oluştu"
+    setData(null)
+
+    // Mevcut JWT token'ı al
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
       setError(errorMessage)
-      
-      // Hata mesajını detaylı göster
-      let toastMessage = errorMessage;
-      if (err instanceof Error && (err as any).errorData) {
-        const errorData = (err as any).errorData;
-        const availableKurumlar = errorData?.data?.available_kurumlar || [];
-        if (availableKurumlar.length > 0) {
-          const kurumListesi = availableKurumlar.map((k: any) => k.kurum_adi || k.kurum_adi).join(', ');
-          toastMessage = `${errorMessage}\n\nMevcut kurumlar: ${kurumListesi}`;
-        }
-      }
-      
       toast({
         title: "Hata",
-        description: toastMessage,
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setLoading(false)
+      return
+    }
+
+    try {
+      // Streaming endpoint'e POST isteği at
+      const response = await fetch("/api/portal-scan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          kurumId: selectedInstitution,
+          detsis,
+          type: queryType,
+        }),
+      })
+
+      if (!response.body) {
+        throw new Error("Sunucudan geçerli bir stream yanıtı alınamadı.")
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder("utf-8")
+      let buffer = ""
+      let finalResult: PortalScanResponse | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // SSE formatında event'leri satır satır işle
+        const events = buffer.split("\n\n")
+        buffer = events.pop() || ""
+
+        for (const rawEvent of events) {
+          const lines = rawEvent.split("\n")
+          const eventLine = lines.find((line) => line.startsWith("event: "))
+          const dataLine = lines.find((line) => line.startsWith("data: "))
+
+          const eventName = eventLine ? eventLine.replace("event: ", "").trim() : ""
+          const dataStr = dataLine ? dataLine.replace("data: ", "").trim() : ""
+
+          if (!eventName) continue
+
+          if (eventName === "started") {
+            // İstersek burada "tarama başladı" mesajını gösterebiliriz
+          } else if (eventName === "keepalive") {
+            // Sadece bağlantıyı canlı tutmak için, UI'da göstermek zorunda değiliz
+          } else if (eventName === "result") {
+            try {
+              const parsed: PortalScanResponse = JSON.parse(dataStr)
+              finalResult = parsed
+              setData(parsed)
+              setError(null)
+            } catch {
+              // Parse hatasında genel hata göster
+              const errorMessage = "Sunucudan gelen veri işlenemedi."
+              setError(errorMessage)
+              toast({
+                title: "Hata",
+                description: errorMessage,
+                variant: "destructive",
+              })
+            }
+          } else if (eventName === "error") {
+            let errorPayload: string
+            try {
+              errorPayload = JSON.parse(dataStr)
+            } catch {
+              errorPayload = dataStr
+            }
+
+            const errorMessage =
+              typeof errorPayload === "string"
+                ? errorPayload
+                : "Tarama sırasında bir hata oluştu."
+
+            setError(errorMessage)
+            toast({
+              title: "Hata",
+              description: errorMessage,
+              variant: "destructive",
+              duration: 10000,
+            })
+          } else if (eventName === "done") {
+            // İşlem tamamlandı, ek bir şey yapmaya gerek yok
+          }
+        }
+      }
+
+      if (!finalResult) {
+        const errorMessage = "Sunucudan beklenen sonuç alınamadı."
+        setError(errorMessage)
+        toast({
+          title: "Hata",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Veri çekilirken bir hata oluştu"
+      setError(errorMessage)
+
+      toast({
+        title: "Hata",
+        description: errorMessage,
         variant: "destructive",
         duration: 10000, // 10 saniye göster
       })
