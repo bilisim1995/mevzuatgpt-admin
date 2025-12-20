@@ -156,3 +156,88 @@ export async function clearElasticsearchDocuments(documentIds: string[]): Promis
     throw error;
   }
 }
+
+export interface EmbeddingsCountResponse {
+  success: boolean;
+  data: {
+    count: number;
+    document_title?: string;
+  };
+  message?: string;
+}
+
+export async function getEmbeddingsCount(documentTitle: string): Promise<EmbeddingsCountResponse> {
+  try {
+    const response = await fetch(
+      `${API_CONFIG.BASE_URL}/api/admin/embeddings/count?document_title=${encodeURIComponent(documentTitle)}`,
+      {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      const error = await response.json().catch(() => ({ message: 'Embeddings sayısı alınırken hata oluştu' }));
+      throw new Error(error.message || 'Embeddings sayısı alınırken hata oluştu');
+    }
+
+    const result: EmbeddingsCountResponse = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
+export interface TotalEmbeddingsCountResponse {
+  success: boolean;
+  data: {
+    total_count: number;
+  };
+  message?: string;
+}
+
+export async function getTotalEmbeddingsCount(): Promise<TotalEmbeddingsCountResponse> {
+  try {
+    const response = await fetch(
+      `${API_CONFIG.BASE_URL}/api/admin/embeddings/count`,
+      {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      const error = await response.json().catch(() => ({ message: 'Toplam embeddings sayısı alınırken hata oluştu' }));
+      throw new Error(error.message || 'Toplam embeddings sayısı alınırken hata oluştu');
+    }
+
+    const result: TotalEmbeddingsCountResponse = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('API sunucusuna bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
+    }
+    throw error;
+  }
+}

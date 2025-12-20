@@ -11,7 +11,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
-import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown } from "lucide-react"
+import { getElasticsearchStatus } from "@/lib/elasticsearch"
+import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { STORAGE_KEYS } from "@/constants/api"
@@ -35,6 +36,8 @@ export function MevzuatTaraDataSource() {
   const [ocrEnabled, setOcrEnabled] = useState<Record<string, boolean>>({})
   const [kurumPopoverOpen, setKurumPopoverOpen] = useState(false)
   const [errorButtons, setErrorButtons] = useState<Set<string>>(new Set()) // Hata alan butonları takip et
+  const [loadingEmbeddings, setLoadingEmbeddings] = useState<boolean>(false) // Embeddings yükleme durumu
+  const [totalChunkCount, setTotalChunkCount] = useState<number>(0) // Toplam chunk sayısı
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -649,7 +652,69 @@ export function MevzuatTaraDataSource() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-4">
-                <CardTitle>Bölümler ve Belgeler</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Bölümler ve Belgeler</CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    disabled={loadingEmbeddings}
+                    onClick={async () => {
+                      setLoadingEmbeddings(true)
+                      
+                      try {
+                        const result = await getElasticsearchStatus()
+                        if (result && result.index_info) {
+                          // index_info.total_docs kullan (ayarlar sayfasındaki Index Detayları bölümündeki gibi)
+                          const count = result.index_info.total_docs || 0
+                          
+                          if (!isNaN(count) && count >= 0) {
+                            setTotalChunkCount(count)
+                            toast({
+                              title: "Başarılı",
+                              description: `Toplam ${count.toLocaleString()} döküman bulundu.`,
+                              variant: "default",
+                            })
+                          } else {
+                            setTotalChunkCount(0)
+                            toast({
+                              title: "Uyarı",
+                              description: "Geçersiz sayı formatı alındı.",
+                              variant: "destructive",
+                            })
+                          }
+                        } else {
+                          setTotalChunkCount(0)
+                          toast({
+                            title: "Hata",
+                            description: "Elasticsearch durumu alınamadı.",
+                            variant: "destructive",
+                          })
+                        }
+                      } catch (err) {
+                        const errorMessage = err instanceof Error ? err.message : "Toplam döküman sayısı alınırken hata oluştu"
+                        setTotalChunkCount(0)
+                        toast({
+                          title: "Hata",
+                          description: errorMessage,
+                          variant: "destructive",
+                        })
+                      } finally {
+                        setLoadingEmbeddings(false)
+                      }
+                    }}
+                  >
+                    {loadingEmbeddings ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Döküman Sayısı (Elasticsearch)</span>
+                  </Button>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {isNaN(totalChunkCount) ? 0 : totalChunkCount.toLocaleString()}
+                  </span>
+                </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <label htmlFor="section-filter" className="text-sm font-medium">
