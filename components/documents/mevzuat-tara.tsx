@@ -38,6 +38,7 @@ export function MevzuatTaraDataSource() {
   const [errorButtons, setErrorButtons] = useState<Set<string>>(new Set()) // Hata alan butonları takip et
   const [loadingEmbeddings, setLoadingEmbeddings] = useState<boolean>(false) // Embeddings yükleme durumu
   const [totalChunkCount, setTotalChunkCount] = useState<number>(0) // Toplam chunk sayısı
+  const [processStatusCount, setProcessStatusCount] = useState<number>(0) // Supabase'de durumu "process" olan döküman sayısı
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -663,37 +664,56 @@ export function MevzuatTaraDataSource() {
                       setLoadingEmbeddings(true)
                       
                       try {
+                        // Elasticsearch sayısını al
                         const result = await getElasticsearchStatus()
+                        let elasticsearchCount = 0
+                        
                         if (result && result.index_info) {
                           // index_info.total_docs kullan (ayarlar sayfasındaki Index Detayları bölümündeki gibi)
                           const count = result.index_info.total_docs || 0
                           
                           if (!isNaN(count) && count >= 0) {
+                            elasticsearchCount = count
                             setTotalChunkCount(count)
-                            toast({
-                              title: "Başarılı",
-                              description: `Toplam ${count.toLocaleString()} döküman bulundu.`,
-                              variant: "default",
-                            })
                           } else {
                             setTotalChunkCount(0)
-                            toast({
-                              title: "Uyarı",
-                              description: "Geçersiz sayı formatı alındı.",
-                              variant: "destructive",
-                            })
                           }
                         } else {
                           setTotalChunkCount(0)
+                        }
+                        
+                        // Supabase'de durumu "processing" olan döküman sayısını al
+                        try {
+                          const processingDocs = await getDocuments(1, 1, undefined, "processing")
+                          const processingCount = processingDocs.total_count || 0
+                          setProcessStatusCount(processingCount)
+                          
                           toast({
-                            title: "Hata",
-                            description: "Elasticsearch durumu alınamadı.",
-                            variant: "destructive",
+                            title: "Başarılı",
+                            description: `Elasticsearch: ${elasticsearchCount.toLocaleString()}, Processing durumunda: ${processingCount.toLocaleString()} döküman bulundu.`,
+                            variant: "default",
                           })
+                        } catch (processErr) {
+                          // Processing sayısı alınamazsa sadece Elasticsearch sayısını göster
+                          setProcessStatusCount(0)
+                          if (elasticsearchCount > 0) {
+                            toast({
+                              title: "Başarılı",
+                              description: `Toplam ${elasticsearchCount.toLocaleString()} döküman bulundu.`,
+                              variant: "default",
+                            })
+                          } else {
+                            toast({
+                              title: "Uyarı",
+                              description: "Processing durumundaki döküman sayısı alınamadı.",
+                              variant: "destructive",
+                            })
+                          }
                         }
                       } catch (err) {
                         const errorMessage = err instanceof Error ? err.message : "Toplam döküman sayısı alınırken hata oluştu"
                         setTotalChunkCount(0)
+                        setProcessStatusCount(0)
                         toast({
                           title: "Hata",
                           description: errorMessage,
@@ -712,7 +732,7 @@ export function MevzuatTaraDataSource() {
                     <span className="ml-1">Döküman Sayısı (Elasticsearch)</span>
                   </Button>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {isNaN(totalChunkCount) ? 0 : totalChunkCount.toLocaleString()}
+                    {isNaN(totalChunkCount) ? 0 : totalChunkCount.toLocaleString()} - {processStatusCount.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
