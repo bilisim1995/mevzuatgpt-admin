@@ -196,6 +196,8 @@ export function MevzuatTaraDataSource() {
       const decoder = new TextDecoder("utf-8")
       let buffer = ""
       let finalResult: MevzuatGPTScanResponse | null = null
+      let hasReceivedResult = false
+      let hasReceivedError = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -225,6 +227,7 @@ export function MevzuatTaraDataSource() {
             try {
               const parsed: MevzuatGPTScanResponse = JSON.parse(dataStr)
               finalResult = parsed
+              hasReceivedResult = true
               
               // Başlıklara göre eşleştirme yap
               if (parsed.data && parsed.data.sections) {
@@ -257,6 +260,7 @@ export function MevzuatTaraDataSource() {
               // Parse hatasında genel hata göster
               const errorMessage = "Sunucudan gelen veri işlenemedi."
               setError(errorMessage)
+              hasReceivedError = true
               toast({
                 title: "Hata",
                 description: errorMessage,
@@ -277,6 +281,7 @@ export function MevzuatTaraDataSource() {
                 : "Tarama sırasında bir hata oluştu."
 
             setError(errorMessage)
+            hasReceivedError = true
             toast({
               title: "Hata",
               description: errorMessage,
@@ -295,14 +300,37 @@ export function MevzuatTaraDataSource() {
         }
       }
 
-      if (!finalResult) {
-        const errorMessage = "Sunucudan beklenen sonuç alınamadı."
-        setError(errorMessage)
-        toast({
-          title: "Hata",
-          description: errorMessage,
-          variant: "destructive",
-        })
+      // Stream tamamlandıktan sonra, eğer result eventi gelmediyse kısa bir süre bekle
+      // Çünkü bazen stream tamamlanır ama son event henüz işlenmemiş olabilir
+      // Özellikle uzun süren işlemlerde result eventi geç gelebilir
+      // result eventi geldiğinde setData çağrılıyor, bu yüzden hasReceivedResult true ise sorun yok
+      if (!hasReceivedResult && !hasReceivedError) {
+        // 15 saniye boyunca her 1 saniyede bir kontrol et
+        let waitCount = 0
+        const maxWaitTime = 15 // 15 saniye
+        
+        while (waitCount < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          waitCount++
+          
+          // Eğer result eventi gelmişse (finalResult set edilmiş demektir) döngüden çık
+          // Bu durumda setData zaten çağrılmış olacak
+          if (finalResult) {
+            break
+          }
+        }
+        
+        // Eğer hala result gelmediyse hata göster
+        // Ama eğer finalResult varsa, setData zaten çağrılmış demektir, hata gösterme
+        if (!finalResult && !hasReceivedError) {
+          const errorMessage = "Sunucudan beklenen sonuç alınamadı. İşlem uzun sürebilir, lütfen sayfayı yenileyip tekrar deneyin."
+          setError(errorMessage)
+          toast({
+            title: "Hata",
+            description: errorMessage,
+            variant: "destructive",
+          })
+        }
       }
     } catch (err) {
       const errorMessage =
