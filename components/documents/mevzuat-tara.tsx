@@ -7,12 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
 import { getElasticsearchStatus } from "@/lib/elasticsearch"
-import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw } from "lucide-react"
+import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw, Copy } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { STORAGE_KEYS } from "@/constants/api"
@@ -39,6 +40,12 @@ export function MevzuatTaraDataSource() {
   const [loadingEmbeddings, setLoadingEmbeddings] = useState<boolean>(false) // Embeddings yükleme durumu
   const [totalChunkCount, setTotalChunkCount] = useState<number>(0) // Toplam chunk sayısı
   const [processStatusCount, setProcessStatusCount] = useState<number>(0) // Supabase'de durumu "process" olan döküman sayısı
+  const [jsonModalOpen, setJsonModalOpen] = useState(false) // JSON modal durumu
+  const [jsonData, setJsonData] = useState<any>(null) // JSON response data
+  const [loadingJson, setLoadingJson] = useState(false) // JSON oluşturma yükleme durumu
+  const [loadingScrapeWithData, setLoadingScrapeWithData] = useState(false) // Tara-JSON İle yükleme durumu
+  const [scrapeWithDataModalOpen, setScrapeWithDataModalOpen] = useState(false) // Tara-JSON İle modal durumu
+  const [jsonInputText, setJsonInputText] = useState("") // Modal içindeki JSON input
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -91,7 +98,16 @@ export function MevzuatTaraDataSource() {
       .replace(/Ç/g, "c")
   }
 
-  const isTruthy = (value: boolean | string | undefined | null) => value === true || value === "true"
+  const isTruthy = (value: boolean | string | number | undefined | null) => {
+    if (value === true || value === "true" || value === 1 || value === "1") {
+      return true
+    }
+    // Boolean kontrolü
+    if (typeof value === "boolean") {
+      return value
+    }
+    return false
+  }
 
   // Mevcut belgeleri yükle ve başlıklara göre eşleştir
   const loadExistingDocuments = async (): Promise<{ mevzuatGPT: Set<string>, portal: Set<string> }> => {
@@ -389,6 +405,296 @@ export function MevzuatTaraDataSource() {
 
   const stats = calculateStats()
 
+  // JSON oluştur fonksiyonu
+  const handleGenerateJson = async () => {
+    if (!selectedInstitution) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen bir kurum seçin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingJson(true)
+    
+    // Mevcut JWT token'ı al
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setLoadingJson(false)
+      return
+    }
+
+    try {
+      // Sadece id ve type gönder
+      const requestData = {
+        id: selectedInstitution,
+        type: queryType,
+      }
+
+      const response = await fetch("/api/mevzuatgpt/generate-json", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      setJsonData(result)
+      setJsonModalOpen(true)
+      
+      toast({
+        title: "Başarılı",
+        description: result.message || "JSON başarıyla oluşturuldu",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "JSON oluşturulurken bir hata oluştu"
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingJson(false)
+    }
+  }
+
+  // JSON'u kopyala fonksiyonu
+  const handleCopyJson = async () => {
+    if (!jsonData) return
+    
+    try {
+      const jsonString = JSON.stringify(jsonData, null, 2)
+      await navigator.clipboard.writeText(jsonString)
+      toast({
+        title: "Başarılı",
+        description: "JSON panoya kopyalandı",
+        variant: "default",
+      })
+    } catch (err) {
+      toast({
+        title: "Hata",
+        description: "JSON kopyalanırken bir hata oluştu",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Tara-JSON İle modal açma fonksiyonu
+  const handleScrapeWithData = () => {
+    setScrapeWithDataModalOpen(true)
+  }
+
+  // Tara-JSON İle gönderme fonksiyonu
+  const handleSubmitScrapeWithData = async () => {
+    if (!jsonInputText.trim()) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen JSON verisi girin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!selectedInstitution) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen bir kurum seçin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingScrapeWithData(true)
+    setError(null)
+    setData(null)
+    
+    // Mevcut JWT token'ı al
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      setError(errorMessage)
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setLoadingScrapeWithData(false)
+      return
+    }
+
+    try {
+      // JSON'u parse et
+      let requestData
+      try {
+        requestData = JSON.parse(jsonInputText)
+      } catch (parseError) {
+        throw new Error("Geçersiz JSON formatı. Lütfen geçerli bir JSON girin.")
+      }
+
+      // Seçili kurum ID'sini ve type'ı otomatik ekle (eğer JSON'da yoksa)
+      if (!requestData.id) {
+        requestData.id = selectedInstitution
+      }
+      if (!requestData.type) {
+        requestData.type = queryType
+      }
+
+      // Önce mevcut belgeleri yükle ve sonuçları al
+      const existingDocs = await loadExistingDocuments()
+
+      const response = await fetch("/api/mevzuatgpt/scrape-with-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      
+      // Response'u MevzuatGPTScanResponse formatına dönüştür
+      if (result.success && result.data) {
+        const scanResponse: MevzuatGPTScanResponse = {
+          success: result.success,
+          message: result.message || "Tarama işlemi tamamlandı",
+          data: {
+            total_sections: result.data.stats?.total_sections || result.data.sections?.length || 0,
+            total_items: result.data.stats?.total_items || result.data.sections?.reduce((acc: number, section: any) => acc + (section.items?.length || 0), 0) || 0,
+            uploaded_documents_count: 0, // Bu bilgi response'da yoksa 0
+            sections: result.data.sections?.map((section: any) => ({
+              section_title: section.section_title,
+              items_count: section.items?.length || 0,
+              items: section.items?.map((item: any, index: number) => ({
+                id: typeof item.id === 'number' ? item.id : (index + 1),
+                baslik: item.baslik,
+                link: item.link,
+                // Response'dan gelen değerleri kullan, yoksa false
+                mevzuatgpt: item.mevzuatgpt === true || item.mevzuatgpt === "true" || item.mevzuatgpt === 1,
+                portal: item.portal === true || item.portal === "true" || item.portal === 1,
+              })) || []
+            })) || [],
+            sections_stats: result.data.stats?.sections_stats || result.data.sections?.map((section: any) => ({
+              section_title: section.section_title,
+              total: section.items?.length || 0,
+              uploaded: 0, // Başlangıçta 0, sonra hesaplanacak
+              not_uploaded: section.items?.length || 0
+            })) || []
+          }
+        }
+
+        // Başlıklara göre eşleştirme yap (handleScan'deki gibi)
+        if (scanResponse.data && scanResponse.data.sections) {
+          scanResponse.data.sections = scanResponse.data.sections.map(section => ({
+            ...section,
+            items: section.items.map(item => {
+              const originalTitle = item.baslik || ""
+              const normalizedTitle = normalizeTitle(originalTitle)
+              
+              // MevzuatGPT'de var mı kontrol et
+              const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
+              
+              // Portal'da var mı kontrol et
+              const isInPortal = existingDocs.portal.has(normalizedTitle)
+              
+              // Response'dan gelen değerleri öncelikli kullan, yoksa mevcut belgelerden kontrol et
+              const updatedItem = {
+                ...item,
+                mevzuatgpt: item.mevzuatgpt === true || isInMevzuatGPT || isTruthy(item.mevzuatgpt),
+                portal: item.portal === true || isInPortal || isTruthy(item.portal)
+              }
+              
+              return updatedItem
+            })
+          }))
+
+          // sections_stats'i güncelle
+          scanResponse.data.sections_stats = scanResponse.data.sections.map(section => {
+            let uploaded = 0
+            let notUploaded = 0
+            
+            section.items.forEach(item => {
+              if (isTruthy(item.mevzuatgpt)) {
+                uploaded++
+              } else {
+                notUploaded++
+              }
+            })
+            
+            return {
+              section_title: section.section_title,
+              total: section.items.length,
+              uploaded,
+              not_uploaded: notUploaded
+            }
+          })
+
+          // uploaded_documents_count'u hesapla
+          let totalUploaded = 0
+          scanResponse.data.sections.forEach(section => {
+            section.items.forEach(item => {
+              if (isTruthy(item.mevzuatgpt)) {
+                totalUploaded++
+              }
+            })
+          })
+          scanResponse.data.uploaded_documents_count = totalUploaded
+        }
+
+        setData(scanResponse)
+        setError(null)
+        
+        // Modal'ı kapat ve input'u temizle (başarılı durumda)
+        setScrapeWithDataModalOpen(false)
+        setJsonInputText("")
+        
+        toast({
+          title: "Başarılı",
+          description: result.message || "Tarama işlemi başarıyla tamamlandı",
+          variant: "default",
+        })
+      } else {
+        throw new Error(result.message || "Beklenmeyen response formatı")
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Tarama işlemi sırasında bir hata oluştu"
+      setError(errorMessage)
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingScrapeWithData(false)
+    }
+  }
+
   // Streaming processDocument helper fonksiyonu
   const processDocumentStream = async (data: {
     kurum_id: string;
@@ -582,6 +888,31 @@ export function MevzuatTaraDataSource() {
                   <span>Taramayı Başlat</span>
                 </>
               )}
+            </Button>
+            <Button 
+              onClick={handleGenerateJson} 
+              disabled={loadingJson || !selectedInstitution}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {loadingJson ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Oluşturuluyor...</span>
+                </>
+              ) : (
+                <>
+                  <span>JSON Oluştur</span>
+                </>
+              )}
+            </Button>
+            <Button 
+              onClick={handleScrapeWithData} 
+              disabled={loadingScrapeWithData || !selectedInstitution}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <span>Tara-JSON İle</span>
             </Button>
           </div>
         </CardContent>
@@ -824,7 +1155,7 @@ export function MevzuatTaraDataSource() {
                           <TableCell className="font-medium">{section.section_title}</TableCell>
                           <TableCell>{item.baslik}</TableCell>
                           <TableCell className="text-center">
-                            {isTruthy(item.mevzuatgpt) ? (
+                            {item.mevzuatgpt === true || isTruthy(item.mevzuatgpt) ? (
                               <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto" />
                             ) : (
                               <Button
@@ -1246,6 +1577,96 @@ export function MevzuatTaraDataSource() {
           <DialogFooter>
             <Button onClick={() => setErrorModal({ open: false, message: "" })}>
               Tamam
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* JSON Modal */}
+      <Dialog open={jsonModalOpen} onOpenChange={setJsonModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>JSON Sonuç</DialogTitle>
+            <DialogDescription>
+              Oluşturulan JSON verisi. Kopyalamak için butona tıklayın.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex justify-end">
+              <Button
+                onClick={handleCopyJson}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <Copy className="h-4 w-4" />
+                Kopyala
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto border rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                {jsonData ? JSON.stringify(jsonData, null, 2) : ""}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setJsonModalOpen(false)}>
+              Kapat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tara-JSON İle Modal */}
+      <Dialog open={scrapeWithDataModalOpen} onOpenChange={setScrapeWithDataModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Tara-JSON İle</DialogTitle>
+            <DialogDescription>
+              JSON verisini yapıştırın ve endpoint'e gönderin.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex-1 overflow-auto">
+              <Textarea
+                value={jsonInputText}
+                onChange={(e) => setJsonInputText(e.target.value)}
+                placeholder={`JSON verisini buraya yapıştırın...
+
+Örnek:
+{
+  "id": "68bbf6df8ef4e8023c19641d",
+  "detsis": "60521689",
+  "type": "kaysis",
+  "sections": [...],
+  "stats": {...}
+}`}
+                className="min-h-[400px] font-mono text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setScrapeWithDataModalOpen(false)
+                setJsonInputText("")
+              }}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={handleSubmitScrapeWithData}
+              disabled={loadingScrapeWithData || !jsonInputText.trim()}
+            >
+              {loadingScrapeWithData ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Gönderiliyor...
+                </>
+              ) : (
+                "Gönder"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
