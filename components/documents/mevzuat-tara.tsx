@@ -16,7 +16,7 @@ import { getElasticsearchStatus } from "@/lib/elasticsearch"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw, Copy } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import { STORAGE_KEYS } from "@/constants/api"
+import { API_CONFIG, STORAGE_KEYS } from "@/constants/api"
 
 type StatusFilter = "all" | "uploaded" | "not-uploaded"
 
@@ -46,6 +46,12 @@ export function MevzuatTaraDataSource() {
   const [loadingScrapeWithData, setLoadingScrapeWithData] = useState(false) // Tara-JSON İle yükleme durumu
   const [scrapeWithDataModalOpen, setScrapeWithDataModalOpen] = useState(false) // Tara-JSON İle modal durumu
   const [jsonInputText, setJsonInputText] = useState("") // Modal içindeki JSON input
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set()) // Toplu yükleme seçimi
+  const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false) // Toplu yükleme modal durumu
+  const [bulkUploadPayload, setBulkUploadPayload] = useState<any>(null) // Toplu yükleme JSON çıktısı
+  const [bulkUploadResponse, setBulkUploadResponse] = useState<any>(null) // Toplu yükleme modalı yanıt çıktısı
+  const [queueStatusModalOpen, setQueueStatusModalOpen] = useState(false) // Kuyruk durumu modalı
+  const [queueStatusResponse, setQueueStatusResponse] = useState<any>(null) // Kuyruk durumu çıktısı
   const { toast } = useToast()
 
   // Kurumları yükle
@@ -695,6 +701,85 @@ export function MevzuatTaraDataSource() {
     }
   }
 
+  const handleFetchDocumentCounts = async (options?: { showAlert?: boolean }) => {
+    setLoadingEmbeddings(true)
+    
+    try {
+      // Elasticsearch sayısını al
+      const result = await getElasticsearchStatus()
+      let elasticsearchCount = 0
+      
+      if (result && result.index_info) {
+        // index_info.total_docs kullan (ayarlar sayfasındaki Index Detayları bölümündeki gibi)
+        const count = result.index_info.total_docs || 0
+        
+        if (!isNaN(count) && count >= 0) {
+          elasticsearchCount = count
+          setTotalChunkCount(count)
+        } else {
+          setTotalChunkCount(0)
+        }
+      } else {
+        setTotalChunkCount(0)
+      }
+      
+      // Supabase'de durumu "processing" olan döküman sayısını al
+      try {
+        const processingDocs = await getDocuments(1, 1, undefined, "processing")
+        const processingCount = processingDocs.total_count || 0
+        setProcessStatusCount(processingCount)
+        
+        const message = `Elasticsearch: ${elasticsearchCount.toLocaleString()}, Processing durumunda: ${processingCount.toLocaleString()} döküman bulundu.`
+        toast({
+          title: "Başarılı",
+          description: message,
+          variant: "default",
+        })
+        if (options?.showAlert) {
+          alert(message)
+        }
+      } catch (processErr) {
+        // Processing sayısı alınamazsa sadece Elasticsearch sayısını göster
+        setProcessStatusCount(0)
+        if (elasticsearchCount > 0) {
+          const message = `Toplam ${elasticsearchCount.toLocaleString()} döküman bulundu.`
+          toast({
+            title: "Başarılı",
+            description: message,
+            variant: "default",
+          })
+          if (options?.showAlert) {
+            alert(message)
+          }
+        } else {
+          const message = "Processing durumundaki döküman sayısı alınamadı."
+          toast({
+            title: "Uyarı",
+            description: message,
+            variant: "destructive",
+          })
+          if (options?.showAlert) {
+            alert(message)
+          }
+        }
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Toplam döküman sayısı alınırken hata oluştu"
+      setTotalChunkCount(0)
+      setProcessStatusCount(0)
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      if (options?.showAlert) {
+        alert(errorMessage)
+      }
+    } finally {
+      setLoadingEmbeddings(false)
+    }
+  }
+
   // Streaming processDocument helper fonksiyonu
   const processDocumentStream = async (data: {
     kurum_id: string;
@@ -781,6 +866,257 @@ export function MevzuatTaraDataSource() {
     }
 
     return finalResult
+  }
+
+  const handleToggleSelectedItem = (itemKey: string, checked: boolean) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(itemKey)
+      } else {
+        next.delete(itemKey)
+      }
+      return next
+    })
+  }
+
+  const handleBulkUpload = () => {
+    if (!data?.data?.sections?.length) {
+      toast({
+        title: "Uyarı",
+        description: "Listede veri bulunamadı",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (selectedItems.size === 0) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen en az bir kayıt seçin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const selectedKurum = kurumlar.find(k => k._id === selectedInstitution)
+    const detsis = selectedKurum?.detsis || ""
+
+    const items = data.data.sections.flatMap(section =>
+      section.items
+        .filter(item => selectedItems.has(`${section.section_title}-${item.id}`))
+        .map(item => ({
+          kurum_id: selectedInstitution,
+          detsis,
+          type: queryType,
+          link: item.link,
+          mode: "t",
+          category: section.section_title,
+          document_name: item.baslik,
+          use_ocr: false,
+        }))
+    )
+
+    const payload = { items }
+    setBulkUploadPayload(payload)
+    setBulkUploadResponse(null)
+    setBulkUploadModalOpen(true)
+  }
+
+  const getAuthToken = () => {
+    return typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) : null
+  }
+
+  const handleBulkUploadStart = async () => {
+    if (!bulkUploadPayload?.items?.length) {
+      toast({
+        title: "Uyarı",
+        description: "Gönderilecek veri bulunamadı",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const token = getAuthToken()
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process/queue`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(bulkUploadPayload),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      setBulkUploadResponse(result)
+      toast({
+        title: "Başarılı",
+        description: result.message || "İstekler kuyruğa alındı",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Kuyruğa ekleme sırasında bir hata oluştu"
+      setBulkUploadResponse({ success: false, message: errorMessage })
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleBulkUploadStatus = async () => {
+    const token = getAuthToken()
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process/queue/status`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      setBulkUploadResponse(result)
+      toast({
+        title: "Başarılı",
+        description: "Kuyruk durumu alındı",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Kuyruk durumu alınırken bir hata oluştu"
+      setBulkUploadResponse({ success: false, message: errorMessage })
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleQueueStatusFetch = async () => {
+    const token = getAuthToken()
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process/queue/status`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      setQueueStatusResponse(result)
+      setQueueStatusModalOpen(true)
+      toast({
+        title: "Başarılı",
+        description: "Kuyruk durumu alındı",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Kuyruk durumu alınırken bir hata oluştu"
+      setQueueStatusResponse({ success: false, message: errorMessage })
+      setQueueStatusModalOpen(true)
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleBulkUploadClear = async () => {
+    const confirmed = typeof window !== "undefined" ? window.confirm("Kuyruğu boşaltmak istediğinizden emin misiniz?") : false
+    if (!confirmed) return
+
+    const token = getAuthToken()
+    if (!token) {
+      const errorMessage = "Oturum süresi dolmuş. Lütfen tekrar giriş yapın."
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.SCRAPPER_BASE_URL}/api/kurum/process/queue/clear`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Bir hata oluştu" }))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      setBulkUploadResponse(result)
+      toast({
+        title: "Başarılı",
+        description: "Kuyruk temizlendi",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Kuyruk temizlenirken bir hata oluştu"
+      setBulkUploadResponse({ success: false, message: errorMessage })
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    }
   }
 
   return (
@@ -914,6 +1250,34 @@ export function MevzuatTaraDataSource() {
             >
               <span>Tara-JSON İle</span>
             </Button>
+            <Button 
+              onClick={handleQueueStatusFetch}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <span>Mevcut Kuyruk Durumu</span>
+            </Button>
+            <Button 
+              onClick={handleBulkUploadClear}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <span>Kuyruğu Boşalt</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              disabled={loadingEmbeddings}
+              onClick={() => handleFetchDocumentCounts({ showAlert: true })}
+            >
+              {loadingEmbeddings ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              <span className="ml-1">Döküman Sayısı (Elasticsearch)</span>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -1019,69 +1383,7 @@ export function MevzuatTaraDataSource() {
                     variant="outline"
                     className="h-7 px-2 text-xs"
                     disabled={loadingEmbeddings}
-                    onClick={async () => {
-                      setLoadingEmbeddings(true)
-                      
-                      try {
-                        // Elasticsearch sayısını al
-                        const result = await getElasticsearchStatus()
-                        let elasticsearchCount = 0
-                        
-                        if (result && result.index_info) {
-                          // index_info.total_docs kullan (ayarlar sayfasındaki Index Detayları bölümündeki gibi)
-                          const count = result.index_info.total_docs || 0
-                          
-                          if (!isNaN(count) && count >= 0) {
-                            elasticsearchCount = count
-                            setTotalChunkCount(count)
-                          } else {
-                            setTotalChunkCount(0)
-                          }
-                        } else {
-                          setTotalChunkCount(0)
-                        }
-                        
-                        // Supabase'de durumu "processing" olan döküman sayısını al
-                        try {
-                          const processingDocs = await getDocuments(1, 1, undefined, "processing")
-                          const processingCount = processingDocs.total_count || 0
-                          setProcessStatusCount(processingCount)
-                          
-                          toast({
-                            title: "Başarılı",
-                            description: `Elasticsearch: ${elasticsearchCount.toLocaleString()}, Processing durumunda: ${processingCount.toLocaleString()} döküman bulundu.`,
-                            variant: "default",
-                          })
-                        } catch (processErr) {
-                          // Processing sayısı alınamazsa sadece Elasticsearch sayısını göster
-                          setProcessStatusCount(0)
-                          if (elasticsearchCount > 0) {
-                            toast({
-                              title: "Başarılı",
-                              description: `Toplam ${elasticsearchCount.toLocaleString()} döküman bulundu.`,
-                              variant: "default",
-                            })
-                          } else {
-                            toast({
-                              title: "Uyarı",
-                              description: "Processing durumundaki döküman sayısı alınamadı.",
-                              variant: "destructive",
-                            })
-                          }
-                        }
-                      } catch (err) {
-                        const errorMessage = err instanceof Error ? err.message : "Toplam döküman sayısı alınırken hata oluştu"
-                        setTotalChunkCount(0)
-                        setProcessStatusCount(0)
-                        toast({
-                          title: "Hata",
-                          description: errorMessage,
-                          variant: "destructive",
-                        })
-                      } finally {
-                        setLoadingEmbeddings(false)
-                      }
-                    }}
+                    onClick={() => handleFetchDocumentCounts()}
                   >
                     {loadingEmbeddings ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -1095,6 +1397,14 @@ export function MevzuatTaraDataSource() {
                   </span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
+                  <Button
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    onClick={handleBulkUpload}
+                    disabled={selectedItems.size === 0}
+                  >
+                    Toplu Yükle
+                  </Button>
                   <div className="flex items-center gap-2">
                     <label htmlFor="section-filter" className="text-sm font-medium">
                       Bölüm:
@@ -1136,6 +1446,7 @@ export function MevzuatTaraDataSource() {
                 <Table>
                   <TableHeader className="bg-white dark:bg-gray-900">
                     <TableRow>
+                      <TableHead className="w-[60px] text-center bg-white dark:bg-gray-900">Seç</TableHead>
                       <TableHead className="w-[200px] bg-white dark:bg-gray-900">Bölüm</TableHead>
                       <TableHead className="bg-white dark:bg-gray-900">Başlık</TableHead>
                       <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">MevzuatGPT</TableHead>
@@ -1152,6 +1463,17 @@ export function MevzuatTaraDataSource() {
                     {data.data.sections.map((section) =>
                       getFilteredItems(section).map((item) => (
                         <TableRow key={`${section.section_title}-${item.id}`}>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={selectedItems.has(`${section.section_title}-${item.id}`)}
+                              onCheckedChange={(checked) => {
+                                handleToggleSelectedItem(
+                                  `${section.section_title}-${item.id}`,
+                                  checked === true
+                                )
+                              }}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium">{section.section_title}</TableCell>
                           <TableCell>{item.baslik}</TableCell>
                           <TableCell className="text-center">
@@ -1667,6 +1989,65 @@ export function MevzuatTaraDataSource() {
               ) : (
                 "Gönder"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Toplu Yükle Modal */}
+      <Dialog open={bulkUploadModalOpen} onOpenChange={setBulkUploadModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Toplu Yükleme JSON</DialogTitle>
+            <DialogDescription>
+              Seçili kayıtlar için oluşturulan JSON verisi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex-1 overflow-auto border rounded-lg bg-gray-50 dark:bg-gray-900 p-4 max-h-[400px]">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                {bulkUploadPayload ? JSON.stringify(bulkUploadPayload, null, 2) : ""}
+              </pre>
+            </div>
+            <div className="flex-1 overflow-auto border rounded-lg bg-gray-50 dark:bg-gray-900 p-4 max-h-[240px]">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                {bulkUploadResponse ? JSON.stringify(bulkUploadResponse, null, 2) : ""}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleBulkUploadStatus}>
+              Mevcut Durum
+            </Button>
+            <Button variant="outline" onClick={handleBulkUploadClear}>
+              Kuyruğu Boşalt
+            </Button>
+            <Button onClick={handleBulkUploadStart}>
+              Yüklemeleri Başlat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mevcut Kuyruk Durumu Modal */}
+      <Dialog open={queueStatusModalOpen} onOpenChange={setQueueStatusModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Mevcut Kuyruk Durumu</DialogTitle>
+            <DialogDescription>
+              Kuyruk durumu ve bekleyen kayıtlar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+            <div className="flex-1 overflow-auto border rounded-lg bg-gray-50 dark:bg-gray-900 p-4 max-h-[400px]">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                {queueStatusResponse ? JSON.stringify(queueStatusResponse, null, 2) : ""}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setQueueStatusModalOpen(false)}>
+              Kapat
             </Button>
           </DialogFooter>
         </DialogContent>
