@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Activity, Database, Server, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, Users, HardDrive, AlertCircle, Zap, Mail, Bot, Cloud, BarChart3, Settings, Wallet } from "lucide-react"
+import { Activity, Database, Server, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, Users, HardDrive, AlertCircle, Zap, Mail, Bot, Cloud, BarChart3, Settings, Wallet, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -26,6 +26,9 @@ export function SystemHealthPanel() {
   } | null>(null)
   const [deepseekBalanceLoading, setDeepseekBalanceLoading] = useState(false)
   const [deepseekBalanceError, setDeepseekBalanceError] = useState<string | null>(null)
+  const [bunnyBalance, setBunnyBalance] = useState<Record<string, unknown> | null>(null)
+  const [bunnyBalanceLoading, setBunnyBalanceLoading] = useState(false)
+  const [bunnyBalanceError, setBunnyBalanceError] = useState<string | null>(null)
   const [elasticsearchModalOpen, setElasticsearchModalOpen] = useState(false)
   const [scrapperHealthModalOpen, setScrapperHealthModalOpen] = useState(false)
   const [scrapperHealthData, setScrapperHealthData] = useState<DetailedHealthResponse | null>(null)
@@ -34,6 +37,7 @@ export function SystemHealthPanel() {
   useEffect(() => {
     loadSystemHealth()
     loadDeepSeekBalance()
+    loadBunnyBalance()
   }, [])
 
   const loadSystemHealth = async () => {
@@ -55,6 +59,7 @@ export function SystemHealthPanel() {
     setRefreshing(true)
     await loadSystemHealth()
     await loadDeepSeekBalance()
+    await loadBunnyBalance()
     setRefreshing(false)
     toast.success('Sistem sağlığı güncellendi')
   }
@@ -92,6 +97,72 @@ export function SystemHealthPanel() {
       setDeepseekBalanceLoading(false)
     }
   }
+
+  const loadBunnyBalance = async () => {
+    setBunnyBalanceLoading(true)
+    setBunnyBalanceError(null)
+    try {
+      const response = await fetch("/api/bunny-balance")
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.error || "Bunny.net balance alınamadı")
+      }
+      const data = await response.json()
+      setBunnyBalance(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Bunny.net balance alınamadı"
+      setBunnyBalanceError(message)
+    } finally {
+      setBunnyBalanceLoading(false)
+    }
+  }
+
+  const getBunnyBalanceValue = (data: Record<string, unknown> | null) => {
+    if (!data) return null
+    const directValue =
+      (data as any).UserBalance ??
+      (data as any).userBalance ??
+      (data as any).Balance ??
+      (data as any).balance
+
+    if (typeof directValue === "number") {
+      return directValue
+    }
+
+    const history =
+      (data as any).UserBalanceHistory ?? (data as any).userBalanceHistory
+
+    if (Array.isArray(history) && history.length > 0) {
+      const last = history[history.length - 1]
+      const historyValue =
+        (last as any).UserBalance ??
+        (last as any).userBalance ??
+        (last as any).Balance ??
+        (last as any).balance
+
+      if (typeof historyValue === "number") {
+        return historyValue
+      }
+    }
+
+    const historyChart =
+      (data as any).UserBalanceHistoryChart ??
+      (data as any).userBalanceHistoryChart
+
+    if (historyChart && typeof historyChart === "object") {
+      const entries = Object.entries(historyChart as Record<string, unknown>)
+      if (entries.length > 0) {
+        entries.sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+        const lastValue = entries[entries.length - 1][1]
+        if (typeof lastValue === "number") {
+          return lastValue
+        }
+      }
+    }
+
+    return null
+  }
+
 
   const getOverallHealthBadge = (status: string) => {
     const config = {
@@ -672,6 +743,46 @@ export function SystemHealthPanel() {
           )}
         </div>
 
+        {/* Bunny.net Balance */}
+        <div className="bg-white/10 dark:bg-black/20 backdrop-blur-xl rounded-3xl p-6 border border-gray-200/20 dark:border-gray-800/30 shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 flex items-center justify-center">
+                <Globe className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Bunny.net Balance</h3>
+            </div>
+          </div>
+
+          {bunnyBalanceLoading ? (
+            <div className="p-3 bg-gray-50/50 dark:bg-gray-900/20 rounded-lg">
+              <p className="text-sm text-gray-600 dark:text-gray-300">Yükleniyor...</p>
+            </div>
+          ) : bunnyBalanceError ? (
+            <div className="p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-300">{bunnyBalanceError}</p>
+            </div>
+          ) : bunnyBalance ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-cyan-600 dark:text-cyan-400">Bakiye</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {getBunnyBalanceValue(bunnyBalance) !== null
+                      ? Number(getBunnyBalanceValue(bunnyBalance)).toFixed(2)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-lg">
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">Balance bilgisi bulunamadı</p>
+            </div>
+          )}
+        </div>
+
+
         {/* Storage */}
         <div className="bg-white/10 dark:bg-black/20 backdrop-blur-xl rounded-3xl p-6 border border-gray-200/20 dark:border-gray-800/30 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
@@ -716,55 +827,6 @@ export function SystemHealthPanel() {
           )}
         </div>
 
-        {/* API */}
-        <div className="bg-white/10 dark:bg-black/20 backdrop-blur-xl rounded-3xl p-6 border border-gray-200/20 dark:border-gray-800/30 shadow-2xl">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-600/20 flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">API</h3>
-            </div>
-            {getComponentStatusBadge(healthData.components.api.status)}
-          </div>
-
-          {healthData.components.api.status === 'healthy' ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-2 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-lg">
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">Ortalama Yanıt</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {healthData.components.api.avg_response_time_ms?.toFixed(1)}ms
-                  </p>
-                </div>
-                <div className="p-2 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg">
-                  <p className="text-xs text-blue-600 dark:text-blue-400">Son 1 Saat</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {healthData.components.api.requests_last_hour} istek
-                  </p>
-                </div>
-                <div className="p-2 bg-purple-50/50 dark:bg-purple-900/20 rounded-lg">
-                  <p className="text-xs text-purple-600 dark:text-purple-400">Güvenilirlik</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    %{healthData.components.api.avg_reliability_score?.toFixed(1)}
-                  </p>
-                </div>
-                <div className="p-2 bg-green-50/50 dark:bg-green-900/20 rounded-lg">
-                  <p className="text-xs text-green-600 dark:text-green-400">Uptime</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {healthData.components.api.uptime_status}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
-              <p className="text-sm text-red-700 dark:text-red-300">
-                {healthData.components.api.error || 'API hatası'}
-              </p>
-            </div>
-          )}
-        </div>
       </div>
       </div>
 
