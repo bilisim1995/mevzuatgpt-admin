@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Activity, Database, Server, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, Users, HardDrive, AlertCircle, Zap, Mail, Bot, Cloud, BarChart3, Settings } from "lucide-react"
+import { Activity, Database, Server, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, Users, HardDrive, AlertCircle, Zap, Mail, Bot, Cloud, BarChart3, Settings, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -15,6 +15,17 @@ export function SystemHealthPanel() {
   const [healthData, setHealthData] = useState<SystemHealthData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [deepseekBalance, setDeepseekBalance] = useState<{
+    is_available?: boolean
+    balance_infos?: Array<{
+      currency?: string
+      total_balance?: string
+      granted_balance?: string
+      topped_up_balance?: string
+    }>
+  } | null>(null)
+  const [deepseekBalanceLoading, setDeepseekBalanceLoading] = useState(false)
+  const [deepseekBalanceError, setDeepseekBalanceError] = useState<string | null>(null)
   const [elasticsearchModalOpen, setElasticsearchModalOpen] = useState(false)
   const [scrapperHealthModalOpen, setScrapperHealthModalOpen] = useState(false)
   const [scrapperHealthData, setScrapperHealthData] = useState<DetailedHealthResponse | null>(null)
@@ -22,6 +33,7 @@ export function SystemHealthPanel() {
 
   useEffect(() => {
     loadSystemHealth()
+    loadDeepSeekBalance()
   }, [])
 
   const loadSystemHealth = async () => {
@@ -42,6 +54,7 @@ export function SystemHealthPanel() {
   const handleRefresh = async () => {
     setRefreshing(true)
     await loadSystemHealth()
+    await loadDeepSeekBalance()
     setRefreshing(false)
     toast.success('Sistem sağlığı güncellendi')
   }
@@ -58,6 +71,25 @@ export function SystemHealthPanel() {
       })
     } finally {
       setScrapperHealthLoading(false)
+    }
+  }
+
+  const loadDeepSeekBalance = async () => {
+    setDeepseekBalanceLoading(true)
+    setDeepseekBalanceError(null)
+    try {
+      const response = await fetch("/api/deepseek-balance")
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.error || "DeepSeek balance alınamadı")
+      }
+      const data = await response.json()
+      setDeepseekBalance(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "DeepSeek balance alınamadı"
+      setDeepseekBalanceError(message)
+    } finally {
+      setDeepseekBalanceLoading(false)
     }
   }
 
@@ -591,6 +623,53 @@ export function SystemHealthPanel() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* DeepSeek Balance */}
+        <div className="bg-white/10 dark:bg-black/20 backdrop-blur-xl rounded-3xl p-6 border border-gray-200/20 dark:border-gray-800/30 shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-600/20 flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">DeepSeek Balance</h3>
+            </div>
+          </div>
+
+          {deepseekBalanceLoading ? (
+            <div className="p-3 bg-gray-50/50 dark:bg-gray-900/20 rounded-lg">
+              <p className="text-sm text-gray-600 dark:text-gray-300">Yükleniyor...</p>
+            </div>
+          ) : deepseekBalanceError ? (
+            <div className="p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-300">{deepseekBalanceError}</p>
+            </div>
+          ) : deepseekBalance?.balance_infos?.length ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                {deepseekBalance.balance_infos
+                  .filter((info) => info.currency === "USD")
+                  .map((info, index) => (
+                    <div key={`${info.currency || "currency"}-${index}`} className="p-3 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-lg col-span-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400">Toplam</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{info.total_balance || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400">Kullanılabilir</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">{deepseekBalance.is_available ? "Evet" : "Hayır"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-lg">
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">Balance bilgisi bulunamadı</p>
+            </div>
+          )}
         </div>
 
         {/* Storage */}
