@@ -5,12 +5,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse } from "@/lib/scrapper"
+import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse, yargitayUpload } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
 import { getElasticsearchStatus } from "@/lib/elasticsearch"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw, Copy } from "lucide-react"
@@ -46,6 +47,8 @@ export function MevzuatTaraDataSource() {
   const [loadingScrapeWithData, setLoadingScrapeWithData] = useState(false) // Tara-JSON İle yükleme durumu
   const [scrapeWithDataModalOpen, setScrapeWithDataModalOpen] = useState(false) // Tara-JSON İle modal durumu
   const [jsonInputText, setJsonInputText] = useState("") // Modal içindeki JSON input
+  const [yargitayPage, setYargitayPage] = useState("1")
+  const [loadingYargitayUpload, setLoadingYargitayUpload] = useState(false)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set()) // Toplu yükleme seçimi
   const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false) // Toplu yükleme modal durumu
   const [bulkUploadPayload, setBulkUploadPayload] = useState<any>(null) // Toplu yükleme JSON çıktısı
@@ -365,6 +368,50 @@ export function MevzuatTaraDataSource() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleYargitayUpload = async () => {
+    if (!selectedInstitution) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen bir kurum seçin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const pageNumber = Number(yargitayPage)
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+      toast({
+        title: "Uyarı",
+        description: "Lütfen geçerli bir page değeri girin",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingYargitayUpload(true)
+    try {
+      const result = await yargitayUpload({
+        page: pageNumber,
+        kurum_id: selectedInstitution,
+      })
+      toast({
+        title: "Başarılı",
+        description: result?.message || "Yargıtay yükleme isteği gönderildi",
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Yargıtay yükleme isteği gönderilirken hata oluştu"
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingYargitayUpload(false)
     }
   }
 
@@ -1208,6 +1255,34 @@ export function MevzuatTaraDataSource() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="yargitay-page-input" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Page:
+              </label>
+              <Input
+                id="yargitay-page-input"
+                type="number"
+                min={1}
+                value={yargitayPage}
+                onChange={(event) => setYargitayPage(event.target.value)}
+                className="w-[120px] min-w-[120px]"
+              />
+            </div>
+            <Button
+              onClick={handleYargitayUpload}
+              disabled={loadingYargitayUpload || !selectedInstitution}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {loadingYargitayUpload ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Yükleniyor...</span>
+                </>
+              ) : (
+                <span>Yargıtay Yüklemesi</span>
+              )}
+            </Button>
             <Button 
               onClick={handleScan} 
               disabled={loading || !selectedInstitution}
