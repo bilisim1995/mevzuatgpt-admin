@@ -1816,6 +1816,47 @@ export async function yargitayUpload(data: YargitayUploadRequest): Promise<Yargi
   }
 }
 
+export interface YargitayChainStatusResponse {
+  active: boolean;
+  next_page: number;
+  kurum_id: string;
+}
+
+export async function getYargitayChainStatus(): Promise<YargitayChainStatusResponse> {
+  try {
+    const headers = getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.SCRAPPER_BASE_URL}/api/yargitay-upload/chain/status`,
+      {
+        method: 'GET',
+        headers: headers,
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          window.location.href = '/admin/login';
+        }
+        throw new Error('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+      }
+      const errorText = await response.text();
+      throw new Error(errorText || `API Hatası: ${response.status} - ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Scrapper API sunucusuna bağlanılamıyor. Lütfen bağlantıyı kontrol edin.');
+    }
+    throw error;
+  }
+}
+
 export interface ProcessDocumentRequest {
   kurum_id: string;
   link: string;

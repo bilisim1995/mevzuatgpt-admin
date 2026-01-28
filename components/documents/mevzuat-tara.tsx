@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse, yargitayUpload } from "@/lib/scrapper"
+import { getKurumlar, getMetadataList, MevzuatGPTScanResponse, MevzuatGPTScanSection, MevzuatGPTSectionStats, Kurum, ProcessDocumentResponse, yargitayUpload, getYargitayChainStatus } from "@/lib/scrapper"
 import { getDocuments } from "@/lib/document"
 import { getElasticsearchStatus } from "@/lib/elasticsearch"
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Search, Check, ChevronsUpDown, RefreshCw, Copy } from "lucide-react"
@@ -49,6 +49,13 @@ export function MevzuatTaraDataSource() {
   const [jsonInputText, setJsonInputText] = useState("") // Modal içindeki JSON input
   const [yargitayPage, setYargitayPage] = useState("1")
   const [loadingYargitayUpload, setLoadingYargitayUpload] = useState(false)
+  const [loadingYargitayChainStatus, setLoadingYargitayChainStatus] = useState(false)
+  const [yargitayChainStatusModalOpen, setYargitayChainStatusModalOpen] = useState(false)
+  const [yargitayChainStatusData, setYargitayChainStatusData] = useState<{
+    active?: boolean;
+    next_page?: number;
+    kurum_id?: string;
+  } | null>(null)
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set()) // Toplu yükleme seçimi
   const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false) // Toplu yükleme modal durumu
   const [bulkUploadPayload, setBulkUploadPayload] = useState<any>(null) // Toplu yükleme JSON çıktısı
@@ -412,6 +419,31 @@ export function MevzuatTaraDataSource() {
       })
     } finally {
       setLoadingYargitayUpload(false)
+    }
+  }
+
+  const handleYargitayChainStatus = async () => {
+    setLoadingYargitayChainStatus(true)
+    try {
+      const result = await getYargitayChainStatus()
+      const statusData = (result as any)?.data ?? result
+      setYargitayChainStatusData(statusData)
+      setYargitayChainStatusModalOpen(true)
+      toast({
+        title: "Zincir Durumu (Yargıtay)",
+        description: `Aktif: ${statusData?.active ? "Evet" : "Hayır"} | Sıradaki Sayfa: ${statusData?.next_page ?? "-"} | Kurum ID: ${statusData?.kurum_id ?? "-"}`,
+        variant: "default",
+      })
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Zincir durumu alınırken hata oluştu"
+      toast({
+        title: "Hata",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingYargitayChainStatus(false)
     }
   }
 
@@ -1283,6 +1315,21 @@ export function MevzuatTaraDataSource() {
                 <span>Yargıtay Yüklemesi</span>
               )}
             </Button>
+            <Button
+              onClick={handleYargitayChainStatus}
+              disabled={loadingYargitayChainStatus}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {loadingYargitayChainStatus ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Kontrol ediliyor...</span>
+                </>
+              ) : (
+                <span>Zincir Durumu (Yargıtay)</span>
+              )}
+            </Button>
             <Button 
               onClick={handleScan} 
               disabled={loading || !selectedInstitution}
@@ -1954,6 +2001,37 @@ export function MevzuatTaraDataSource() {
           </Card>
         </>
       )}
+
+      {/* Yargıtay Zincir Durumu Modal */}
+      <Dialog open={yargitayChainStatusModalOpen} onOpenChange={setYargitayChainStatusModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Zincir Durumu (Yargıtay)</DialogTitle>
+            <DialogDescription>
+              Zincirin mevcut durum bilgileri aşağıda listelenir.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div>
+              <span className="font-medium">Aktif:</span>{" "}
+              {yargitayChainStatusData?.active ? "Evet" : "Hayır"}
+            </div>
+            <div>
+              <span className="font-medium">Sıradaki Sayfa:</span>{" "}
+              {yargitayChainStatusData?.next_page ?? "-"}
+            </div>
+            <div>
+              <span className="font-medium">Kurum ID:</span>{" "}
+              {yargitayChainStatusData?.kurum_id ?? "-"}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setYargitayChainStatusModalOpen(false)}>
+              Kapat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Hata Modal */}
       <Dialog open={errorModal.open} onOpenChange={(open) => setErrorModal({ open, message: errorModal.message })}>
