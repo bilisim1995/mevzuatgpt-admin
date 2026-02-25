@@ -272,13 +272,10 @@ export function MevzuatTaraDataSource() {
                     // MevzuatGPT'de var mı kontrol et
                     const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
                     
-                    // Portal'da var mı kontrol et
-                    const isInPortal = existingDocs.portal.has(normalizedTitle)
-                    
                     const updatedItem = {
                       ...item,
                       mevzuatgpt: isInMevzuatGPT || isTruthy(item.mevzuatgpt),
-                      portal: isInPortal || isTruthy(item.portal)
+                      portal: isTruthy(item.portal)
                     }
                     
                     return updatedItem
@@ -489,6 +486,28 @@ export function MevzuatTaraDataSource() {
   }
 
   const stats = calculateStats()
+
+  const visibleItemKeys = data
+    ? data.data.sections.flatMap((section) =>
+        getFilteredItems(section).map((item) => `${section.section_title}-${item.id}`)
+      )
+    : []
+  const allVisibleSelected =
+    visibleItemKeys.length > 0 && visibleItemKeys.every((key) => selectedItems.has(key))
+  const someVisibleSelected =
+    visibleItemKeys.length > 0 && visibleItemKeys.some((key) => selectedItems.has(key)) && !allVisibleSelected
+
+  const handleToggleSelectAllVisible = (checked: boolean) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        visibleItemKeys.forEach((key) => next.add(key))
+      } else {
+        visibleItemKeys.forEach((key) => next.delete(key))
+      }
+      return next
+    })
+  }
 
   // JSON oluştur fonksiyonu
   const handleGenerateJson = async () => {
@@ -704,14 +723,11 @@ export function MevzuatTaraDataSource() {
               // MevzuatGPT'de var mı kontrol et
               const isInMevzuatGPT = existingDocs.mevzuatGPT.has(normalizedTitle)
               
-              // Portal'da var mı kontrol et
-              const isInPortal = existingDocs.portal.has(normalizedTitle)
-              
               // Response'dan gelen değerleri öncelikli kullan, yoksa mevcut belgelerden kontrol et
               const updatedItem = {
                 ...item,
                 mevzuatgpt: item.mevzuatgpt === true || isInMevzuatGPT || isTruthy(item.mevzuatgpt),
-                portal: item.portal === true || isInPortal || isTruthy(item.portal)
+                portal: isTruthy(item.portal)
               }
               
               return updatedItem
@@ -1568,7 +1584,16 @@ export function MevzuatTaraDataSource() {
                 <Table>
                   <TableHeader className="bg-white dark:bg-gray-900">
                     <TableRow>
-                      <TableHead className="w-[60px] text-center bg-white dark:bg-gray-900">Seç</TableHead>
+                      <TableHead className="w-[90px] text-center bg-white dark:bg-gray-900">
+                        <div className="flex items-center justify-center gap-2">
+                          <Checkbox
+                            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+                            onCheckedChange={(checked) => handleToggleSelectAllVisible(checked === true)}
+                            disabled={visibleItemKeys.length === 0}
+                          />
+                          <span className="text-xs">Tümü</span>
+                        </div>
+                      </TableHead>
                       <TableHead className="w-[200px] bg-white dark:bg-gray-900">Bölüm</TableHead>
                       <TableHead className="bg-white dark:bg-gray-900">Başlık</TableHead>
                       <TableHead className="w-[150px] text-center bg-white dark:bg-gray-900">MevzuatGPT</TableHead>
